@@ -34,11 +34,10 @@
 
 ### 安装步骤
 
-1. 从 [Releases](https://github.com/wfkwdw/cloudreve-manager/releases) 下载最新版本的可执行文件（`CloudreveManager.exe`）。
-2. 将 `CloudreveManager.exe`、`winsw.exe` 和 `winsw.xml` 放在同一个文件夹内。
-3. **以管理员身份运行** `CloudreveManager.exe`。
-4. 在界面中配置端口（默认 5212），点击“安装网盘”即可完成部署。
-5. 安装完成后，工具会自动启动服务并打开网盘页面。
+1. 从 [Releases](https://github.com/wfkwdw/cloudreve-manager/releases) 下载最新版本的整合包。
+2. **以管理员身份运行** `CloudreveManager.exe`。
+3. 在界面中配置端口（默认 5212），点击“安装网盘”即可完成部署。
+4. 安装完成后，工具会自动启动服务并打开网盘页面。
 
 ### 使用说明
 
