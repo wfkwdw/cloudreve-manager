@@ -22,7 +22,7 @@ cloudreve 网盘搭建 windows工具
 
 ## 📸 界面预览
 
-![主界面预览](screenshot.png) *(请将截图文件放置于仓库根目录)*
+![主界面预览](screenshot.png) **
 
 ## 🚀 快速开始
 
