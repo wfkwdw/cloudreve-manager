@@ -54,36 +54,47 @@
 程序运行所需文件结构：
 
 - `conf.ini` 中的 `[System]` 段下的 `Listen` 项控制服务监听端口。
+- 
 - 安装时会自动备份原配置文件为 `conf.ini.bak`。
 
 ## 🔧 高级功能
 
 MySQL 数据库导出
+
 在备份配置时，若检测到数据库类型为 MySQL，工具会自动调用 mysqldump 导出当前数据库的 SQL 文件，并打包进 ZIP 备份中。恢复时会将 SQL 文件复制到程序目录，供用户手动导入。
 
 防火墙规则
+
 安装时会创建名为 Cloudreve_Port_Inbound 和 Cloudreve_Port_Outbound 的防火墙规则，允许指定端口的 TCP 流量。卸载时会自动删除这些规则。
 
 📝 常见问题
+
 Q: 提示“需要管理员权限”怎么办？
+
 A: 右键点击 CloudreveManager.exe，选择“以管理员身份运行”。首次安装或卸载时必须有管理员权限。
 
 Q: 端口被占用无法安装怎么办？
+
 A: 使用“检测端口”功能查看占用进程，若非 Cloudreve 进程，请更换端口或手动结束占用进程。
 
 Q: 自动升级失败，提示网络错误？
+
 A: 可能是 GitHub API 请求频率过高或被防火墙阻断，可尝试手动升级（选择本地文件）或稍后再试。
 
 Q: 如何查看日志？
+
 A: 程序运行时会输出日志到控制台（若以命令行启动），也可在 GUI 的“执行结果”区域查看详细输出。
+
 🛠️ 开发与编译
 
 环境准备
+
 Python 3.6+
 
 安装依赖：pip install ttkbootstrap
 
 运行源码
+
 python cloudreve_manager.py
 
 打包为 EXE
@@ -96,6 +107,7 @@ pyinstaller -F -w -i cloudreve.ico ^
 cloudreve_manager.py
 
 📄 许可证
+
 本项目基于 MIT 协议开源，详情请参阅 LICENSE 文件。
 
 🙏 致谢
