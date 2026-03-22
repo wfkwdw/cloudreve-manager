@@ -97,7 +97,9 @@ cloudreve_manager.py
 
 📄 许可证
 本项目基于 MIT 协议开源，详情请参阅 LICENSE 文件。
+
 🙏 致谢
+
 Cloudreve – 优秀的开源网盘系统
 
 winsw – Windows 服务包装器
