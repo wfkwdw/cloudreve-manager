@@ -1,5 +1,5 @@
 # cloudreve-manager
-cloudreve 网盘搭建 windows工具
+
 # Cloudreve 服务管理工具
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
