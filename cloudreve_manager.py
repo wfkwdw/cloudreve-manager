@@ -764,9 +764,29 @@ class CloudreveManagerGUI:
         self.port_config_frame = None
         self.progress_frame = None
         self.result_frame = None
+
+        # ========== 新增：检查必要文件 ==========
+        self.check_required_files()
         
         self.create_optimized_ui()
         self.refresh_service_status()
+
+    # ========== 新增：检查必要文件的方法 ==========
+    def check_required_files(self):
+        missing = []
+        if not os.path.exists(self.CLOUDREVE_EXE):
+            missing.append("cloudreve.exe")
+        if not os.path.exists(self.WINSW_EXE):
+            missing.append("winsw.exe")
+        if not os.path.exists(self.WINSW_XML):
+            missing.append("winsw.xml")
+        if missing:
+            missing_str = "\n".join(missing)
+            messagebox.showwarning(
+                lang.tr("missing_files_title"),
+                lang.tr("missing_files_msg", missing_str),
+                parent=self.root
+            )
 
     def create_optimized_ui(self):
         main_container = ttk.Frame(self.root, padding=15)
