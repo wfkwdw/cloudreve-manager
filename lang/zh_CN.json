@@ -182,7 +182,7 @@
     "install_wait_service": "等待服务启动...",
     "install_wait_service_msg": "⏳ 正在检测服务状态...",
     "install_wait_progress": "等待服务启动... ({0}/{1})",
-    "install_service_failed": "服务启动失败",
+    "install_service_failed": "❌ 安装服务失败：{0}",
     "install_service_failed_msg": "⚠️ 安装不完整！\n服务启动超时（{0}秒）\n状态：{1}\n建议：手动启动服务或检查配置",
     "install_service_ok": "✅ 服务启动成功（耗时{0}秒）",
     "install_wait_config": "等待配置文件...",
@@ -251,7 +251,6 @@
     "start_service_exception": "❌ 启动服务失败：{0}",
     "install_service_kill_old": "✅ 已结束残留进程",
     "install_service_installed_ok": "✅ 服务安装完成",
-    "install_service_failed": "❌ 安装服务失败：{0}",
     "stop_service_start": "⏳ 正在停止服务...",
     "stop_service_stopping": "停止服务...",
     "stop_service_command_failed": "❌ 停止服务失败",
@@ -421,8 +420,12 @@
     "auto_backup_mysql": "📦 自动备份：检测到 MySQL 数据库，正在导出 SQL...",
     "auto_backup_mysql_success": "✅ 自动备份：MySQL 数据库导出成功",
     "auto_backup_mysql_failed": "⚠️ 自动备份：MySQL 导出失败：{0}",
-	"missing_files_title": "缺失文件",
+    "missing_files_title": "缺失文件",
     "missing_files_msg": "缺少以下文件，程序可能无法正常工作：\n{0}",
     "auto_backup_success": "📦 已自动备份配置至：{0}",
-    "auto_backup_failed": "⚠️ 自动备份失败：{0}"
+    "auto_backup_failed": "⚠️ 自动备份失败：{0}",
+    "install_mysql_no_config": "配置文件不存在，无法安装 MySQL 数据库,请先安装网盘。",
+    "service_not_installed_installing": "服务未安装，正在安装...",
+    "service_installed_ok": "服务安装成功。",
+    "starting_service": "正在启动服务..."
 }
