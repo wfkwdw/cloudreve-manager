@@ -6,6 +6,9 @@
 [![Python](https://img.shields.io/badge/python-3.6%2B-green.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://www.microsoft.com/windows)
 
+🚀 One-Click, Truly “Out of the Box”
+Cloudreve WebDisk Manager is a Windows‑focused tool that encapsulates all the complex deployment and management tasks of Cloudreve into a graphical interface. No need to memorize commands or write scripts—just a few clicks and you’re done:
+
 🚀 一键搞定，真正的“开箱即用”
 Cloudreve 网盘服务管理工具，专为 Windows 用户打造，将 Cloudreve 复杂的部署和管理工作全部封装在图形化界面中。无需记忆命令，无需编写脚本，点点鼠标，就能轻松完成：
 
@@ -23,22 +26,7 @@ Cloudreve 网盘服务管理工具，专为 Windows 用户打造，将 Cloudreve
 
 ✅ 多语言支持：自动检测系统语言，支持简体中文和英文，用户可随时切换
 
-🚀 One-Click, Truly “Out of the Box”
-Cloudreve WebDisk Manager is a Windows‑focused tool that encapsulates all the complex deployment and management tasks of Cloudreve into a graphical interface. No need to memorize commands or write scripts—just a few clicks and you’re done:
 
-✅ One‑click install/uninstall Cloudreve service (automatically configures firewall, port, and away mode)
-
-✅ Automatic port detection with intelligent config file port synchronization
-
-✅ One‑click database switching: smooth migration from SQLite to MySQL, or switch back to default SQLite with one click
-
-✅ Auto upgrade: fetch the latest version from GitHub, download, extract, replace, and restart the service—all with visual progress feedback
-
-✅ Config backup & restore: supports manual/auto backup, automatically excludes the uploads folder, and automatically exports MySQL database SQL files
-
-✅ Real‑time status monitoring: bottom status bar always shows service status and database type (including MySQL username/password)
-
-✅ Multi‑language support: automatically detects system language, supports Simplified Chinese and English, and allows users to switch at any time
 
 ## 📸 界面预览
 
@@ -69,6 +57,7 @@ Cloudreve WebDisk Manager is a Windows‑focused tool that encapsulates all the 
 - **配置备份/恢复**：通过菜单“文件”可备份/恢复配置文件（排除 uploads 目录），若数据库为 MySQL 则同时导出 SQL 文件。
 
 🎉 谁在使用？
+
 个人用户：想快速搭建个人网盘，不想折腾命令行
 
 中小企业：需要稳定可靠的内部文件分享系统
