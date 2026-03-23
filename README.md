@@ -66,24 +66,30 @@ Cloudreve 网盘服务管理工具，专为 Windows 用户打造，将 Cloudreve
 
 🛠️ 开发与编译
 
-环境准备
+环境准备：Python 3.6+
 
-Python 3.6+
-
-安装依赖：pip install ttkbootstrap
-
+安装依赖：
+```batch
+pip install ttkbootstrap
+```
 运行源码
-
+```batch
 python cloudreve_manager.py
+```
 
-打包为 EXE
+### 打包为可执行文件
 
-使用 PyInstaller 打包：
+使用 PyInstaller 打包为单文件无控制台窗口的 EXE（需根据实际 Python 安装路径调整 `--add-data` 参数）：
 
+```batch
 pyinstaller -F -w -i cloudreve.ico ^
 --add-data "C:\Users\admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\ttkbootstrap;ttkbootstrap" ^
 --add-data "cloudreve.ico;." ^
 cloudreve_manager.py
+```
+
+> **注意**：请将 `C:\Users\admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\ttkbootstrap` 替换为你的 Python 环境中 `ttkbootstrap` 包的实际路径。  
+> 可以通过命令 `pip show ttkbootstrap` 查看安装位置。
 
 📄 许可证
 
