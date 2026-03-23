@@ -1303,6 +1303,57 @@ class CloudreveManagerGUI:
     def show_about(self):
         messagebox.showinfo(lang.tr("about_title"), lang.tr("about_text"))
 
+    # ========== 统一服务安装与启动 ==========
+    def _ensure_service_installed_and_started(self, start_after_install=True):
+        """确保服务已安装，并根据参数决定是否启动。返回 (是否成功, 启动耗时, 错误消息)"""
+        try:
+            # 检查服务是否存在
+            if not check_service_exists(self.SERVICE_NAME):
+                self.append_result_text(lang.tr("service_not_installed_installing"), "info")
+                if not check_admin_permission():
+                    return False, 0, lang.tr("admin_required")
+                if not os.path.exists(self.WINSW_EXE):
+                    return False, 0, lang.tr("winsw_missing")
+                # 安装服务
+                try:
+                    run_cmd_with_retry([self.WINSW_EXE, "install"], timeout=30)
+                    self.append_result_text(lang.tr("service_installed_ok"), "success")
+                except Exception as e:
+                    return False, 0, lang.tr("service_install_failed", str(e))
+                # 安装后稍等片刻
+                time.sleep(1)
+
+            if not start_after_install:
+                return True, 0, ""
+
+            # 如果服务已存在，则启动它
+            # 先尝试停止已有的服务（如果有的话）
+            if check_service_exists(self.SERVICE_NAME):
+                service_status = get_service_status(self.SERVICE_NAME)
+                if service_status == "RUNNING":
+                    self.append_result_text(lang.tr("service_already_running"), "info")
+                    return True, 0, ""
+                # 启动服务
+                self.append_result_text(lang.tr("starting_service"), "info")
+                start_service(self.SERVICE_NAME)
+
+                # 等待服务启动
+                service_started, status_msg, elapsed = wait_for_service_start(
+                    self.SERVICE_NAME,
+                    self.PROCESS_NAME,
+                    status_callback=lambda: self.root.after(0, self.refresh_service_status),
+                    progress_callback=None  # 进度由调用者处理
+                )
+                if service_started:
+                    return True, elapsed, ""
+                else:
+                    return False, elapsed, status_msg
+            else:
+                return False, 0, lang.tr("service_not_found")
+        except Exception as e:
+            log.error(f"确保服务安装启动失败: {e}")
+            return False, 0, str(e)
+
     # ========== 使用默认数据库（切换回 SQLite） ==========
     def use_default_database(self):
         if not os.path.exists(self.CONF_PATH):
@@ -1337,32 +1388,11 @@ class CloudreveManagerGUI:
                 config.write(f)
             self.root.after(0, lambda: self.update_progress(40, lang.tr("switch_config_updated")))
 
-            service_status = get_service_status(self.SERVICE_NAME)
-            process_exists = check_process_exists(self.PROCESS_NAME)
-            service_running = (service_status == "RUNNING" and process_exists)
-
-            self.root.after(0, lambda: self.append_result_text(lang.tr("switch_restart_service"), "info"))
-            if service_running:
-                stop_service(self.SERVICE_NAME)
-                time.sleep(2)
-            start_service(self.SERVICE_NAME)
-
-            def refresh_cb():
-                self.root.after(0, self.refresh_service_status)
-
-            def progress_cb(r, t, e, total):
-                progress = 40 + int(50 * r / t)
-                self.root.after(0, self.update_progress, progress, lang.tr("switch_waiting_service", r, t))
-
-            service_started, status_msg, elapsed = wait_for_service_start(
-                self.SERVICE_NAME,
-                self.PROCESS_NAME,
-                status_callback=refresh_cb,
-                progress_callback=progress_cb
-            )
-            if not service_started:
-                self.root.after(0, lambda: self.append_result_text(lang.tr("switch_service_timeout", status_msg), "warning"))
-                self.root.after(0, lambda: messagebox.showwarning(lang.tr("start_failed"), lang.tr("switch_service_failed", status_msg)))
+            # 确保服务已安装并启动
+            ok, elapsed, err_msg = self._ensure_service_installed_and_started(start_after_install=True)
+            if not ok:
+                self.root.after(0, lambda: self.append_result_text(lang.tr("switch_service_failed", err_msg), "warning"))
+                self.root.after(0, lambda: messagebox.showwarning(lang.tr("start_failed"), lang.tr("switch_service_failed", err_msg)))
                 return
             else:
                 self.root.after(0, lambda: self.append_result_text(lang.tr("switch_service_started", elapsed), "success"))
@@ -1397,6 +1427,11 @@ class CloudreveManagerGUI:
 
     def _install_mysql_worker(self):
         try:
+            # 增加管理员权限检查
+            if not check_admin_permission():
+                self.root.after(0, lambda: self.append_result_text(lang.tr("admin_required"), "danger"))
+                return
+
             if not os.path.exists(self.CONF_PATH):
                 self.root.after(0, lambda: self.append_result_text(lang.tr("install_mysql_no_config"), "danger"))
                 self.root.after(0, lambda: messagebox.showerror(lang.tr("error"), lang.tr("install_mysql_no_config")))
@@ -1637,37 +1672,15 @@ class CloudreveManagerGUI:
             self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_auto_backup"), "info"))
             self.auto_backup_config()
 
+            # ========== 服务启动部分修复 ==========
             self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_config_service"), "info"))
             self.root.after(0, lambda: self.update_progress(55, lang.tr("mysql_config_service")))
-            service_status = get_service_status(self.SERVICE_NAME)
-            process_exists = check_process_exists(self.PROCESS_NAME)
-            service_running = (service_status == "RUNNING" and process_exists)
 
-            if not service_running:
-                self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_starting_service"), "info"))
-                start_service(self.SERVICE_NAME)
-            else:
-                self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_restarting_service"), "info"))
-                stop_service(self.SERVICE_NAME)
-                time.sleep(2)
-                start_service(self.SERVICE_NAME)
-
-            def refresh_cb():
-                self.root.after(0, self.refresh_service_status)
-
-            def progress_cb(r, t, e, total):
-                progress = 55 + int(35 * r / t)
-                self.root.after(0, self.update_progress, progress, lang.tr("mysql_waiting_service", r, t))
-
-            service_started, status_msg, elapsed = wait_for_service_start(
-                self.SERVICE_NAME,
-                self.PROCESS_NAME,
-                status_callback=refresh_cb,
-                progress_callback=progress_cb
-            )
-            if not service_started:
-                self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_service_timeout", status_msg), "warning"))
-                self.root.after(0, lambda: messagebox.showwarning(lang.tr("start_failed"), lang.tr("mysql_service_failed", status_msg)))
+            # 确保服务已安装并启动
+            ok, elapsed, err_msg = self._ensure_service_installed_and_started(start_after_install=True)
+            if not ok:
+                self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_service_failed", err_msg), "warning"))
+                self.root.after(0, lambda: messagebox.showwarning(lang.tr("start_failed"), lang.tr("mysql_service_failed", err_msg)))
                 return
             else:
                 self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_service_started", elapsed), "success"))
@@ -1718,37 +1731,12 @@ class CloudreveManagerGUI:
             self.uninstall_btn.config(state=DISABLED)
 
             self.root.after(0, lambda: self.update_progress(10, lang.tr("open_check_service")))
-            if not check_service_exists(self.SERVICE_NAME):
-                self.root.after(0, lambda: self.update_progress(100, lang.tr("open_service_not_installed")))
-                self.root.after(0, lambda: self.append_result_text(lang.tr("open_service_not_installed_msg"), "danger"))
-                self.root.after(0, lambda: messagebox.showwarning(lang.tr("open_failed"), lang.tr("open_service_not_installed_msg")))
-                self.install_btn.config(state=NORMAL)
-                self.uninstall_btn.config(state=NORMAL)
-                return
-
-            self.root.after(0, lambda: self.update_progress(20, lang.tr("open_read_port")))
-            current_port = get_port_from_conf(self.CONF_PATH, self.DEFAULT_PORT)
-            self.root.after(0, lambda: self.append_result_text(lang.tr("open_port", current_port), "info"))
-
-            service_status = get_service_status(self.SERVICE_NAME)
-            if service_status != "RUNNING":
-                self.root.after(0, lambda: self.update_progress(30, lang.tr("open_starting_service")))
-                self.root.after(0, lambda: self.append_result_text(lang.tr("open_starting_service_msg"), "info"))
-                start_service(self.SERVICE_NAME)
-                self.root.after(0, lambda: self.append_result_text(lang.tr("open_start_command_sent"), "success"))
-
-            self.root.after(0, lambda: self.update_progress(50, lang.tr("open_wait_service")))
-            self.root.after(0, lambda: self.append_result_text(lang.tr("open_wait_service_msg"), "info"))
-            service_started, status_msg, elapsed = wait_for_service_start(
-                self.SERVICE_NAME,
-                self.PROCESS_NAME,
-                status_callback=lambda: self.root.after(0, self.refresh_service_status),
-                progress_callback=lambda r, t, e, total: self.root.after(0, self.update_progress, 50 + int(30 * r / t), lang.tr("open_wait_progress", r, t))
-            )
-            if not service_started:
+            # 确保服务已安装并启动
+            ok, elapsed, err_msg = self._ensure_service_installed_and_started(start_after_install=True)
+            if not ok:
                 self.root.after(0, lambda: self.update_progress(100, lang.tr("open_service_failed")))
-                self.root.after(0, lambda: self.append_result_text(lang.tr("open_service_timeout", status_msg), "warning"))
-                self.root.after(0, lambda: messagebox.showwarning(lang.tr("open_failed"), lang.tr("open_service_failed_msg", status_msg)))
+                self.root.after(0, lambda: self.append_result_text(lang.tr("open_service_failed_msg", err_msg), "danger"))
+                self.root.after(0, lambda: messagebox.showwarning(lang.tr("open_failed"), lang.tr("open_service_failed_msg", err_msg)))
                 self.install_btn.config(state=NORMAL)
                 self.uninstall_btn.config(state=NORMAL)
                 return
@@ -1756,6 +1744,7 @@ class CloudreveManagerGUI:
                 self.root.after(0, lambda: self.append_result_text(lang.tr("open_service_started", elapsed), "success"))
 
             self.root.after(0, lambda: self.update_progress(80, lang.tr("open_wait_port")))
+            current_port = get_port_from_conf(self.CONF_PATH, self.DEFAULT_PORT)
             self.root.after(0, lambda: self.append_result_text(lang.tr("open_wait_port_msg"), "info"))
             try:
                 def port_progress(elapsed, max_wait, remaining):
@@ -2081,36 +2070,12 @@ class CloudreveManagerGUI:
     def _start_service_worker(self):
         try:
             self.root.after(0, lambda: self.update_progress(5, lang.tr("start_service_check")))
-            service_exists = check_service_exists(self.SERVICE_NAME)
-            if not service_exists:
-                self.root.after(0, lambda: self.update_progress(10, lang.tr("start_service_install")))
-                self._install_service_only()
-                self.root.after(0, lambda: self.update_progress(30, lang.tr("start_service_install_ok")))
-            else:
-                self.root.after(0, lambda: self.update_progress(30, lang.tr("start_service_prepare")))
-            
-            success = start_service(self.SERVICE_NAME)
-            if not success:
-                self.root.after(0, lambda: self.append_result_text(lang.tr("start_service_command_failed"), "danger"))
-                self.root.after(0, lambda: messagebox.showerror(lang.tr("start_failed"), lang.tr("start_service_command_failed")))
+            ok, elapsed, err_msg = self._ensure_service_installed_and_started(start_after_install=True)
+            if not ok:
+                self.root.after(0, lambda: self.update_progress(100, lang.tr("start_service_failed")))
+                self.root.after(0, lambda: self.append_result_text(lang.tr("start_service_failed_msg", err_msg), "danger"))
+                self.root.after(0, lambda: messagebox.showerror(lang.tr("start_failed"), lang.tr("start_service_failed_msg", err_msg)))
                 return
-
-            def refresh_callback():
-                self.root.after(0, self.refresh_service_status)
-
-            def progress_callback(retry_count, max_retries, elapsed, timeout):
-                progress = 30 + int(60 * retry_count / max_retries)
-                self.root.after(0, self.update_progress, progress, lang.tr("start_service_wait", retry_count, max_retries))
-
-            service_started, status_msg, elapsed = wait_for_service_start(
-                self.SERVICE_NAME,
-                self.PROCESS_NAME,
-                status_callback=refresh_callback,
-                progress_callback=progress_callback
-            )
-            if not service_started:
-                self.root.after(0, lambda: self.append_result_text(lang.tr("start_service_timeout", status_msg), "warning"))
-                self.root.after(0, lambda: messagebox.showwarning(lang.tr("start_failed"), lang.tr("start_service_failed", status_msg)))
             else:
                 self.root.after(0, lambda: self.append_result_text(lang.tr("start_service_ok", elapsed), "success"))
                 self.root.after(0, lambda: self.update_progress(100, lang.tr("start_service_complete")))
@@ -2123,6 +2088,7 @@ class CloudreveManagerGUI:
             self.root.after(0, self.refresh_service_status)
 
     def _install_service_only(self):
+        """仅安装服务（不启动）"""
         try:
             if check_process_exists(self.PROCESS_NAME):
                 kill_process(self.PROCESS_NAME)
@@ -2341,21 +2307,12 @@ class CloudreveManagerGUI:
 
             if service_exists_before:
                 self.root.after(0, lambda: self.update_progress(85, lang.tr("auto_upgrade_start_service")))
-                start_service(self.SERVICE_NAME)
-                self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_start_command"), "success"))
-
-                self.root.after(0, lambda: self.update_progress(88, lang.tr("auto_upgrade_wait_service")))
-                self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_wait_service_msg"), "info"))
-                service_started, status_msg, elapsed = wait_for_service_start(
-                    self.SERVICE_NAME,
-                    self.PROCESS_NAME,
-                    status_callback=lambda: self.root.after(0, self.refresh_service_status),
-                    progress_callback=lambda r, t, e, total: self.root.after(0, self.update_progress, 88 + int(5 * r / t), lang.tr("auto_upgrade_wait_progress", r, t))
-                )
-                if not service_started:
+                # 使用统一方法确保服务启动
+                ok, elapsed, err_msg = self._ensure_service_installed_and_started(start_after_install=True)
+                if not ok:
                     self.root.after(0, lambda: self.update_progress(100, lang.tr("auto_upgrade_start_failed")))
-                    self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_start_failed_msg", status_msg), "warning"))
-                    self.root.after(0, lambda: messagebox.showwarning(lang.tr("start_failed"), lang.tr("auto_upgrade_start_failed_msg", status_msg)))
+                    self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_start_failed_msg", err_msg), "warning"))
+                    self.root.after(0, lambda: messagebox.showwarning(lang.tr("start_failed"), lang.tr("auto_upgrade_start_failed_msg", err_msg)))
                     self.install_btn.config(state=NORMAL)
                     self.uninstall_btn.config(state=NORMAL)
                     return
@@ -2517,20 +2474,10 @@ class CloudreveManagerGUI:
 
             if service_exists_before:
                 self.root.after(0, lambda: self.update_progress(70, lang.tr("manual_upgrade_start_service")))
-                start_service(self.SERVICE_NAME)
-                self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_start_command"), "success"))
-
-                self.root.after(0, lambda: self.update_progress(80, lang.tr("manual_upgrade_wait_service")))
-                self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_wait_service_msg"), "info"))
-                service_started, status_msg, elapsed = wait_for_service_start(
-                    self.SERVICE_NAME,
-                    self.PROCESS_NAME,
-                    status_callback=lambda: self.root.after(0, self.refresh_service_status),
-                    progress_callback=lambda r, t, e, total: self.root.after(0, self.update_progress, 80 + int(10 * r / t), lang.tr("manual_upgrade_wait_progress", r, t))
-                )
-                if not service_started:
+                ok, elapsed, err_msg = self._ensure_service_installed_and_started(start_after_install=True)
+                if not ok:
                     self.root.after(0, lambda: self.update_progress(100, lang.tr("manual_upgrade_start_failed")))
-                    self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_start_failed_msg", elapsed, status_msg), "warning"))
+                    self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_start_failed_msg", elapsed, err_msg), "warning"))
                     self.install_btn.config(state=NORMAL)
                     self.uninstall_btn.config(state=NORMAL)
                     return
