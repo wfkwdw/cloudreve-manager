@@ -7,6 +7,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://www.microsoft.com/windows)
 
 一款专为 **Cloudreve** 网盘设计的 Windows 图形化管理工具，支持一键安装/卸载、服务启停、端口配置、防火墙规则、离开模式、自动/手动升级、MySQL 数据库配置及配置备份恢复。
+
 A Windows graphical management tool exclusively designed for Cloudreve cloud storage, supporting one-click installation/uninstallation, service start/stop, port configuration, firewall rule management, idle mode, automatic/manual upgrade, MySQL database configuration, and configuration backup & recovery.
 
 ## ✨ 功能特点
