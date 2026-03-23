@@ -22,8 +22,8 @@
 
 ## 📸 界面预览
 
-![主界面预览](screenshot.png) **
-
+![主界面预览](screenshot.png) 
+![主界面预览](screenshot2.png) 
 ## 🚀 快速开始
 
 ### 环境要求
