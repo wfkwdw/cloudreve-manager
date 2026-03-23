@@ -421,6 +421,8 @@
     "auto_backup_mysql": "📦 自动备份：检测到 MySQL 数据库，正在导出 SQL...",
     "auto_backup_mysql_success": "✅ 自动备份：MySQL 数据库导出成功",
     "auto_backup_mysql_failed": "⚠️ 自动备份：MySQL 导出失败：{0}",
+	"missing_files_title": "缺失文件",
+    "missing_files_msg": "缺少以下文件，程序可能无法正常工作：\n{0}",
     "auto_backup_success": "📦 已自动备份配置至：{0}",
     "auto_backup_failed": "⚠️ 自动备份失败：{0}"
 }
