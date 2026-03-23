@@ -72,6 +72,7 @@ Cloudreve 网盘服务管理工具，专为 Windows 用户打造，将 Cloudreve
 ```batch
 pip install ttkbootstrap
 ```
+
 运行源码
 ```batch
 python cloudreve_manager.py
