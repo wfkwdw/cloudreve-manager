@@ -422,5 +422,7 @@
     "auto_backup_mysql_success": "✅ Auto backup: MySQL database exported successfully",
     "auto_backup_mysql_failed": "⚠️ Auto backup: MySQL export failed: {0}",
     "auto_backup_success": "📦 Auto backup completed: {0}",
+	"missing_files_title": "Missing Files",
+    "missing_files_msg": "The following files are missing, the program may not work properly:\n{0}",
     "auto_backup_failed": "⚠️ Auto backup failed: {0}"
 }
