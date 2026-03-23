@@ -6,21 +6,39 @@
 [![Python](https://img.shields.io/badge/python-3.6%2B-green.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://www.microsoft.com/windows)
 
-一款专为 **Cloudreve** 网盘设计的 Windows 图形化管理工具，支持一键安装/卸载、服务启停、端口配置、防火墙规则、离开模式、自动/手动升级、MySQL 数据库配置及配置备份恢复。
+🚀 一键搞定，真正的“开箱即用”
+Cloudreve 网盘服务管理工具，专为 Windows 用户打造，将 Cloudreve 复杂的部署和管理工作全部封装在图形化界面中。无需记忆命令，无需编写脚本，点点鼠标，就能轻松完成：
 
-A Windows graphical management tool exclusively designed for Cloudreve cloud storage, supporting one-click installation/uninstallation, service start/stop, port configuration, firewall rule management, idle mode, automatic/manual upgrade, MySQL database configuration, and configuration backup & recovery.
+✅ 一键安装/卸载 Cloudreve 服务（自动配置防火墙、端口、离开模式）
 
-## ✨ 功能特点
+✅ 自动检测端口占用，智能同步配置文件端口
 
-- **一键安装/卸载**：自动创建 Windows 服务，配置防火墙规则，启用系统离开模式
-- **服务状态监控**：实时显示服务运行状态及数据库类型（SQLite/MySQL）
-- **端口配置**：灵活修改监听端口，自动检测端口占用情况
-- **自动/手动升级**：从 GitHub 获取最新版本自动更新，或手动选择升级文件
-- **MySQL 支持**：自动检测 MySQL 服务，配置 Cloudreve 数据库，支持导出/导入 SQL 备份
-- **配置备份与恢复**：备份配置文件及 SQLite 数据，可选 MySQL 导出，排除 uploads 目录
-- **防火墙集成**：自动添加/删除 Windows 防火墙入站/出站规则
-- **离开模式管理**：安装时自动启用离开模式，卸载时恢复，确保服务持续运行
-- **高 DPI 适配**：自适应窗口大小，支持现代高分屏显示
+✅ 一键切换数据库：从 SQLite 平滑迁移到 MySQL，或一键切回默认 SQLite
+
+✅ 自动升级：从 GitHub 获取最新版，自动下载、解压、替换、重启服务，全程可视化进度
+
+✅ 配置备份与恢复：支持手动/自动备份，自动排除 uploads 文件夹，并自动导出 MySQL 数据库 SQL 文件
+
+✅ 实时状态监控：底部状态栏始终显示服务运行状态和数据库类型（含 MySQL 用户名/密码）
+
+✅ 多语言支持：自动检测系统语言，支持简体中文和英文，用户可随时切换
+
+🚀 One-Click, Truly “Out of the Box”
+Cloudreve WebDisk Manager is a Windows‑focused tool that encapsulates all the complex deployment and management tasks of Cloudreve into a graphical interface. No need to memorize commands or write scripts—just a few clicks and you’re done:
+
+✅ One‑click install/uninstall Cloudreve service (automatically configures firewall, port, and away mode)
+
+✅ Automatic port detection with intelligent config file port synchronization
+
+✅ One‑click database switching: smooth migration from SQLite to MySQL, or switch back to default SQLite with one click
+
+✅ Auto upgrade: fetch the latest version from GitHub, download, extract, replace, and restart the service—all with visual progress feedback
+
+✅ Config backup & restore: supports manual/auto backup, automatically excludes the uploads folder, and automatically exports MySQL database SQL files
+
+✅ Real‑time status monitoring: bottom status bar always shows service status and database type (including MySQL username/password)
+
+✅ Multi‑language support: automatically detects system language, supports Simplified Chinese and English, and allows users to switch at any time
 
 ## 📸 界面预览
 
@@ -50,41 +68,12 @@ A Windows graphical management tool exclusively designed for Cloudreve cloud sto
 - **MySQL 配置**：点击菜单“文件” → “安装 MySQL 数据库”，按照提示输入 root 密码，工具将自动创建数据库及用户，并更新配置文件。
 - **配置备份/恢复**：通过菜单“文件”可备份/恢复配置文件（排除 uploads 目录），若数据库为 MySQL 则同时导出 SQL 文件。
 
-## ⚙️ 配置文件说明
+🎉 谁在使用？
+个人用户：想快速搭建个人网盘，不想折腾命令行
 
-程序运行所需文件结构：
+中小企业：需要稳定可靠的内部文件分享系统
 
-- `conf.ini` 中的 `[System]` 段下的 `Listen` 项控制服务监听端口。
-- 
-- 安装时会自动备份原配置文件为 `conf.ini.bak`。
-
-## 🔧 高级功能
-
-MySQL 数据库导出
-
-在备份配置时，若检测到数据库类型为 MySQL，工具会自动调用 mysqldump 导出当前数据库的 SQL 文件，并打包进 ZIP 备份中。恢复时会将 SQL 文件复制到程序目录，供用户手动导入。
-
-防火墙规则
-
-安装时会创建名为 Cloudreve_Port_Inbound 和 Cloudreve_Port_Outbound 的防火墙规则，允许指定端口的 TCP 流量。卸载时会自动删除这些规则。
-
-📝 常见问题
-
-Q: 提示“需要管理员权限”怎么办？
-
-A: 右键点击 CloudreveManager.exe，选择“以管理员身份运行”。首次安装或卸载时必须有管理员权限。
-
-Q: 端口被占用无法安装怎么办？
-
-A: 使用“检测端口”功能查看占用进程，若非 Cloudreve 进程，请更换端口或手动结束占用进程。
-
-Q: 自动升级失败，提示网络错误？
-
-A: 可能是 GitHub API 请求频率过高或被防火墙阻断，可尝试手动升级（选择本地文件）或稍后再试。
-
-Q: 如何查看日志？
-
-A: 程序运行时会输出日志到控制台（若以命令行启动），也可在 GUI 的“执行结果”区域查看详细输出。
+开发者/运维：需要一个可视化的 Cloudreve 管理辅助工具
 
 🛠️ 开发与编译
 
