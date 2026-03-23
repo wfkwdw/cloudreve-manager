@@ -182,7 +182,7 @@
     "install_wait_service": "Waiting for service to start...",
     "install_wait_service_msg": "⏳ Detecting service status...",
     "install_wait_progress": "Waiting for service to start... ({0}/{1})",
-    "install_service_failed": "Service start failed",
+    "install_service_failed": "❌ Service installation failed: {0}",
     "install_service_failed_msg": "⚠️ Installation incomplete!\nService start timeout ({0} seconds)\nStatus: {1}\nSuggestion: Start service manually or check configuration",
     "install_service_ok": "✅ Service started successfully in {0} seconds",
     "install_wait_config": "Waiting for configuration file...",
@@ -251,7 +251,6 @@
     "start_service_exception": "❌ Failed to start service: {0}",
     "install_service_kill_old": "✅ Residual process terminated",
     "install_service_installed_ok": "✅ Service installed",
-    "install_service_failed": "❌ Service installation failed: {0}",
     "stop_service_start": "⏳ Stopping service...",
     "stop_service_stopping": "Stopping service...",
     "stop_service_command_failed": "❌ Service stop command failed",
@@ -422,7 +421,11 @@
     "auto_backup_mysql_success": "✅ Auto backup: MySQL database exported successfully",
     "auto_backup_mysql_failed": "⚠️ Auto backup: MySQL export failed: {0}",
     "auto_backup_success": "📦 Auto backup completed: {0}",
-	"missing_files_title": "Missing Files",
+    "missing_files_title": "Missing Files",
     "missing_files_msg": "The following files are missing, the program may not work properly:\n{0}",
-    "auto_backup_failed": "⚠️ Auto backup failed: {0}"
+    "auto_backup_failed": "⚠️ Auto backup failed: {0}",
+    "install_mysql_no_config": "Configuration file not found, cannot install MySQL database. Please install the cloud drive first.",
+    "service_not_installed_installing": "Service not installed, installing...",
+    "service_installed_ok": "Service installed successfully.",
+    "starting_service": "Starting service..."
 }
