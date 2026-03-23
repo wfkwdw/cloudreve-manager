@@ -10,7 +10,7 @@
 Cloudreve WebDisk Manager is a Windows‑focused tool that encapsulates all the complex deployment and management tasks of Cloudreve into a graphical interface. No need to memorize commands or write scripts—just a few clicks and you’re done:
 
 🚀 一键搞定，真正的“开箱即用”
-Cloudreve 网盘服务管理工具，专为 Windows 用户打造，将 Cloudreve 复杂的部署和管理工作全部封装在图形化界面中。无需记忆命令，无需编写脚本，点点鼠标，就能轻松完成：
+Cloudreve 网盘服务管理工具，专为 Windows 用户打造，将 Cloudreve 复杂的部署和管理工作全部封装在图形化界面中。无需记忆命令，无需编写脚本，点点鼠标，就能轻松完成网盘搭建和实现开机启动。
 
 ✅ 一键安装/卸载 Cloudreve 服务（自动配置防火墙、端口、离开模式）
 
