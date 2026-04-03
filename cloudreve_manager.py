@@ -735,6 +735,9 @@ class CloudreveManagerGUI:
         self.DEFAULT_PORT = DEFAULT_PORT
         self.custom_port = ttk.StringVar(value=str(self.DEFAULT_PORT))
         
+        # 获取本机IP地址（用于界面显示）
+        self.local_ip = self.get_local_ip()
+        
         try:
             if getattr(sys, 'frozen', False):
                 self.APP_DIR = os.path.dirname(sys.executable)
@@ -771,6 +774,26 @@ class CloudreveManagerGUI:
         self.create_optimized_ui()
         self.refresh_service_status()
 
+    # ========== 获取本机IP地址 ==========
+    def get_local_ip(self):
+        """获取本机局域网IPv4地址"""
+        try:
+            # 创建一个UDP套接字连接到外部地址，不实际发送数据
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(('8.8.8.8', 80))
+                ip = s.getsockname()[0]
+            return ip
+        except Exception:
+            try:
+                # 备用方法：获取主机名对应的IP
+                hostname = socket.gethostname()
+                ip = socket.gethostbyname(hostname)
+                if ip and ip != '127.0.0.1':
+                    return ip
+            except:
+                pass
+            return "未知"
+
     # ========== 新增：检查必要文件的方法 ==========
     def check_required_files(self):
         missing = []
@@ -800,8 +823,9 @@ class CloudreveManagerGUI:
         self.sub_title = ttk.Label(self.title_frame, text=reminder_text, font=("微软雅黑", 9), bootstyle=WARNING if is_on_c_drive else SUCCESS)
         self.sub_title.pack(pady=8, padx=10)
         
-        # ========== 端口配置框 ==========
-        self.port_config_frame = ttk.LabelFrame(main_container, text=lang.tr("port_config"))
+        # ========== 端口配置框（标题后显示本机IP） ==========
+        port_title = lang.tr("port_config_with_ip", self.local_ip)
+        self.port_config_frame = ttk.LabelFrame(main_container, text=port_title)
         self.port_config_frame.pack(fill=X, pady=(0, 8))
         
         port_frame = ttk.Frame(self.port_config_frame)
@@ -936,8 +960,9 @@ class CloudreveManagerGUI:
         self.title_frame.config(text=lang.tr("install_reminder_title"))
         self.sub_title.config(text=reminder_text)
 
-        # 端口配置框
-        self.port_config_frame.config(text=lang.tr("port_config"))
+        # 端口配置框（标题后显示本机IP）
+        port_title = lang.tr("port_config_with_ip", self.local_ip)
+        self.port_config_frame.config(text=port_title)
         self.port_label.config(text=lang.tr("port_label"))
         self.check_btn.config(text=lang.tr("check_port_btn"))
 
