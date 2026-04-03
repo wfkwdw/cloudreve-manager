@@ -4,6 +4,7 @@
     "install_reminder_warning": "⚠️ Data folder is under current directory, do NOT install on C: drive",
     "install_reminder_success": "✅ Data folder is under current directory",
     "port_config": "Port Configuration",
+    "port_config_with_ip": "Port Configuration (Local IP: {0})",
     "port_label": "Configure Port:",
     "check_port_btn": "Check Port",
     "progress_ready": "Ready",

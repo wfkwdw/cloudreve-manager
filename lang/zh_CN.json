@@ -4,6 +4,7 @@
     "install_reminder_warning": "⚠️ 因数据文件保存在data目录，勿在C盘安装",
     "install_reminder_success": "✅ 数据文件保存在本文件夹data目录",
     "port_config": "端口配置",
+    "port_config_with_ip": "端口配置 (本机IP: {0})",
     "port_label": "配置端口：",
     "check_port_btn": "检测端口",
     "progress_ready": "准备就绪",
