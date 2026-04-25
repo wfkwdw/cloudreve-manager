@@ -1,3 +1,4 @@
+# ==================== cloudreve_manager.py (v3.2) ====================
 import sys
 import os
 import time
@@ -68,9 +69,10 @@ DEFAULT_PORT = 5212
 REG_PATH = r"SYSTEM\CurrentControlSet\Control\Session Manager\Power"
 REG_VALUE = "AwayModeEnabled"
 GITHUB_API_URL = "https://api.github.com/repos/cloudreve/cloudreve/releases/latest"
-USER_AGENT = "CloudreveManager/1.0"
+USER_AGENT = "CloudreveManager/3.2"
 RETRY_COUNT = 3
 RETRY_BACKOFF = 2
+VERSION = "3.2"
 
 TEMP_DIR = os.path.join(os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else __file__), "temp")
 
@@ -111,11 +113,15 @@ def run_as_admin():
         )
         sys.exit(0)
 
-def check_admin_permission():
-    if not is_admin():
-        messagebox.showwarning("权限不足", "此操作需要管理员权限，请以管理员身份重新运行程序。")
+def is_admin():
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin()
+    except:
         return False
-    return True
+
+# 仅返回权限状态，不弹窗
+def check_admin_permission():
+    return is_admin()
 
 # ========== 离开模式注册表操作 ==========
 def enable_away_mode():
@@ -244,16 +250,14 @@ def wait_for_port_open(host='localhost', port=80, max_wait=60, check_interval=2,
 
 def open_url_safely(url, port, max_wait=60):
     global opened_urls
+    # 不再强制关闭浏览器，仅记录已打开URL（避免重复打开）
     if url in opened_urls:
-        log.info(f"关闭已打开的URL: {url}")
+        log.info(f"URL已在记录中: {url}")
         try:
-            if sys.platform == 'win32':
-                subprocess.run(['taskkill', '/F', '/IM', 'msedge.exe'], capture_output=True, errors='ignore', timeout=5, creationflags=0x08000000)
-                subprocess.run(['taskkill', '/F', '/IM', 'chrome.exe'], capture_output=True, errors='ignore', timeout=5, creationflags=0x08000000)
-                subprocess.run(['taskkill', '/F', '/IM', 'firefox.exe'], capture_output=True, errors='ignore', timeout=5, creationflags=0x08000000)
+            webbrowser.open(url)
         except:
             pass
-        opened_urls.remove(url)
+        return True
     try:
         wait_for_port_open(host='localhost', port=port, max_wait=max_wait)
         log.info(f"端口localhost:{port}已就绪，打开URL: {url}")
@@ -281,7 +285,7 @@ def is_port_occupied(port, host='localhost'):
             log.debug(f"端口{port}：未被占用（可正常使用）")
             return False
         except OSError as e:
-            if "address already in use" in str(e).lower() or e.errno == 98:
+            if "address already in use" in str(e).lower() or e.errno == 10048:  # Windows 错误码
                 log.debug(f"端口{port}：绑定失败（已被占用）")
                 return True
             else:
@@ -356,12 +360,6 @@ def modify_conf_port(conf_path, port):
         return False
 
 # ========== 核心功能函数 ==========
-def is_admin():
-    try:
-        return ctypes.windll.shell32.IsUserAnAdmin()
-    except:
-        return False
-
 def check_service_exists(service_name):
     try:
         result = run_cmd_with_retry(['sc', 'query', service_name], timeout=10)
@@ -429,7 +427,8 @@ def kill_process(process_name):
         log.error(f"结束进程异常: {e}")
         return False
 
-def add_firewall_rule(port, rule_name="Cloudreve_Port"):
+def add_firewall_rule(port, rule_name_base="Cloudreve_Port"):
+    rule_name = f"{rule_name_base}_{port}"
     try:
         run_cmd_with_retry(['cmd', '/c', f'netsh advfirewall firewall delete rule name="{rule_name}_Inbound"'], timeout=10)
         run_cmd_with_retry(['cmd', '/c', f'netsh advfirewall firewall delete rule name="{rule_name}_Outbound"'], timeout=10)
@@ -778,14 +777,12 @@ class CloudreveManagerGUI:
     def get_local_ip(self):
         """获取本机局域网IPv4地址"""
         try:
-            # 创建一个UDP套接字连接到外部地址，不实际发送数据
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
                 s.connect(('8.8.8.8', 80))
                 ip = s.getsockname()[0]
             return ip
         except Exception:
             try:
-                # 备用方法：获取主机名对应的IP
                 hostname = socket.gethostname()
                 ip = socket.gethostbyname(hostname)
                 if ip and ip != '127.0.0.1':
@@ -1020,7 +1017,6 @@ class CloudreveManagerGUI:
     def update_statusbar(self, text, bootstyle=None):
         self.status_bar.config(text=text)
         if bootstyle:
-            style = ttk.Style()
             if bootstyle == "success":
                 self.status_bar.config(foreground="#2F855A")
             elif bootstyle == "warning":
@@ -1332,42 +1328,35 @@ class CloudreveManagerGUI:
     def _ensure_service_installed_and_started(self, start_after_install=True):
         """确保服务已安装，并根据参数决定是否启动。返回 (是否成功, 启动耗时, 错误消息)"""
         try:
-            # 检查服务是否存在
             if not check_service_exists(self.SERVICE_NAME):
                 self.append_result_text(lang.tr("service_not_installed_installing"), "info")
                 if not check_admin_permission():
                     return False, 0, lang.tr("admin_required")
                 if not os.path.exists(self.WINSW_EXE):
                     return False, 0, lang.tr("winsw_missing")
-                # 安装服务
                 try:
                     run_cmd_with_retry([self.WINSW_EXE, "install"], timeout=30)
                     self.append_result_text(lang.tr("service_installed_ok"), "success")
                 except Exception as e:
                     return False, 0, lang.tr("service_install_failed", str(e))
-                # 安装后稍等片刻
                 time.sleep(1)
 
             if not start_after_install:
                 return True, 0, ""
 
-            # 如果服务已存在，则启动它
-            # 先尝试停止已有的服务（如果有的话）
             if check_service_exists(self.SERVICE_NAME):
                 service_status = get_service_status(self.SERVICE_NAME)
                 if service_status == "RUNNING":
                     self.append_result_text(lang.tr("service_already_running"), "info")
                     return True, 0, ""
-                # 启动服务
                 self.append_result_text(lang.tr("starting_service"), "info")
                 start_service(self.SERVICE_NAME)
 
-                # 等待服务启动
                 service_started, status_msg, elapsed = wait_for_service_start(
                     self.SERVICE_NAME,
                     self.PROCESS_NAME,
                     status_callback=lambda: self.root.after(0, self.refresh_service_status),
-                    progress_callback=None  # 进度由调用者处理
+                    progress_callback=None
                 )
                 if service_started:
                     return True, elapsed, ""
@@ -1388,8 +1377,8 @@ class CloudreveManagerGUI:
         if not messagebox.askyesno(lang.tr("switch_db_confirm_title"), lang.tr("switch_db_confirm_msg"), parent=self.root):
             return
 
-        self.install_btn.config(state=DISABLED)
-        self.uninstall_btn.config(state=DISABLED)
+        self.root.after(0, lambda: self.install_btn.config(state=DISABLED))
+        self.root.after(0, lambda: self.uninstall_btn.config(state=DISABLED))
         threading.Thread(target=self._use_default_db_worker, daemon=True).start()
 
     def _use_default_db_worker(self):
@@ -1413,7 +1402,6 @@ class CloudreveManagerGUI:
                 config.write(f)
             self.root.after(0, lambda: self.update_progress(40, lang.tr("switch_config_updated")))
 
-            # 确保服务已安装并启动
             ok, elapsed, err_msg = self._ensure_service_installed_and_started(start_after_install=True)
             if not ok:
                 self.root.after(0, lambda: self.append_result_text(lang.tr("switch_service_failed", err_msg), "warning"))
@@ -1446,17 +1434,15 @@ class CloudreveManagerGUI:
 
     # ========== 安装 MySQL 数据库（后台线程版） ==========
     def install_mysql_database(self):
-        self.install_btn.config(state=DISABLED)
-        self.uninstall_btn.config(state=DISABLED)
+        if not check_admin_permission():
+            messagebox.showerror(lang.tr("error"), lang.tr("admin_required"))
+            return
+        self.root.after(0, lambda: self.install_btn.config(state=DISABLED))
+        self.root.after(0, lambda: self.uninstall_btn.config(state=DISABLED))
         threading.Thread(target=self._install_mysql_worker, daemon=True).start()
 
     def _install_mysql_worker(self):
         try:
-            # 增加管理员权限检查
-            if not check_admin_permission():
-                self.root.after(0, lambda: self.append_result_text(lang.tr("admin_required"), "danger"))
-                return
-
             if not os.path.exists(self.CONF_PATH):
                 self.root.after(0, lambda: self.append_result_text(lang.tr("install_mysql_no_config"), "danger"))
                 self.root.after(0, lambda: messagebox.showerror(lang.tr("error"), lang.tr("install_mysql_no_config")))
@@ -1497,28 +1483,12 @@ class CloudreveManagerGUI:
                 return
 
             self.root.after(0, lambda: self.append_result_text(lang.tr("install_mysql_testing_root"), "info"))
-            mysql_auth = None
-            default_pwd = "cloudreve"
-            try:
-                test_cmd = [mysql_client, "-u", "root", f"-p{default_pwd}", "-e", "SELECT 1;"]
-                result = subprocess.run(test_cmd, capture_output=True, timeout=10, creationflags=0x08000000)
-                if result.returncode == 0:
-                    mysql_auth = ["-u", "root", f"-p{default_pwd}"]
-                    self.root.after(0, lambda: self.append_result_text(lang.tr("install_mysql_default_password_ok"), "success"))
-                else:
-                    error_msg = result.stderr.decode('gbk', errors='ignore')
-                    if "Access denied" in error_msg:
-                        self.root.after(0, lambda: self._prompt_mysql_password(mysql_client, default_pwd))
-                        return
-                    else:
-                        raise Exception(f"连接失败：{error_msg[:200]}")
-            except Exception as e:
-                self.root.after(0, lambda: self.append_result_text(lang.tr("install_mysql_test_failed", str(e)), "danger"))
-                self.root.after(0, lambda: messagebox.showerror(lang.tr("error"), lang.tr("install_mysql_test_failed", str(e))))
+            # 线程安全的密码询问
+            mysql_auth = self._get_mysql_root_password(mysql_client)
+            if mysql_auth is None:
                 return
 
-            if mysql_auth:
-                self._continue_mysql_config(mysql_client, mysql_auth)
+            self._continue_mysql_config(mysql_client, mysql_auth)
 
         except Exception as e:
             log.error(f"安装 MySQL 数据库失败: {e}")
@@ -1531,36 +1501,146 @@ class CloudreveManagerGUI:
             self.root.after(0, lambda: self.uninstall_btn.config(state=NORMAL))
             self.root.after(0, self.refresh_service_status)
 
-    def _prompt_mysql_password(self, mysql_client, default_pwd):
-        root_pwd = simpledialog.askstring(lang.tr("mysql_root_password_title"),
-                                           lang.tr("mysql_root_password_prompt"),
-                                           show='*', parent=self.root)
-        if root_pwd is None:
-            self.install_btn.config(state=NORMAL)
-            self.uninstall_btn.config(state=NORMAL)
-            return
-        threading.Thread(target=self._test_mysql_password, args=(mysql_client, root_pwd), daemon=True).start()
+    def _get_mysql_root_password(self, mysql_client):
+        """在主线程询问 MySQL root 密码，返回认证参数列表，失败返回 None"""
+        password_event = threading.Event()
+        result_container = []
 
-    def _test_mysql_password(self, mysql_client, root_pwd):
+        def ask_default():
+            default_pwd = "cloudreve"
+            test_cmd = [mysql_client, "-u", "root", f"-p{default_pwd}", "-e", "SELECT 1;"]
+            try:
+                subprocess.run(test_cmd, check=True, capture_output=True, timeout=10, creationflags=0x08000000)
+                result_container.append(["u", "root", f"-p{default_pwd}"])
+                self.root.after(0, lambda: self.append_result_text(lang.tr("install_mysql_default_password_ok"), "success"))
+            except:
+                # 默认密码失败，弹出输入框
+                root_pwd = simpledialog.askstring(lang.tr("mysql_root_password_title"),
+                                                   lang.tr("mysql_root_password_prompt"),
+                                                   show='*', parent=self.root)
+                if root_pwd:
+                    test_cmd2 = [mysql_client, "-u", "root", f"-p{root_pwd}", "-e", "SELECT 1;"]
+                    try:
+                        subprocess.run(test_cmd2, check=True, capture_output=True, timeout=10, creationflags=0x08000000)
+                        result_container.append(["-u", "root", f"-p{root_pwd}"])
+                        self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_manual_password_ok"), "success"))
+                    except Exception as e:
+                        self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_manual_password_failed", str(e)), "danger"))
+                        self.root.after(0, lambda: messagebox.showerror(lang.tr("error"), lang.tr("mysql_manual_password_failed", str(e))))
+                else:
+                    self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_root_password_cancelled"), "warning"))
+            password_event.set()
+
+        self.root.after(0, ask_default)
+        password_event.wait()
+        return result_container[0] if result_container else None
+
+    def _continue_mysql_config(self, mysql_client, mysql_auth):
         try:
-            test_cmd = [mysql_client, "-u", "root", f"-p{root_pwd}", "-e", "SELECT 1;"]
-            result = subprocess.run(test_cmd, capture_output=True, timeout=10, creationflags=0x08000000)
-            if result.returncode == 0:
-                mysql_auth = ["-u", "root", f"-p{root_pwd}"]
-                self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_manual_password_ok"), "success"))
-                self._continue_mysql_config(mysql_client, mysql_auth)
+            self.root.after(0, lambda: self.update_progress(0, lang.tr("mysql_config_start")))
+            shutil.copy2(self.CONF_PATH, self.CONF_PATH + ".install_mysql_bak")
+            self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_backup_ok"), "info"))
+            self.root.after(0, lambda: self.update_progress(10, lang.tr("mysql_backup_complete")))
+
+            # 询问应用账号（主线程）
+            cred_result = self._get_mysql_app_credentials()
+            if cred_result is None:
+                return
+            self.mysql_app_user, self.mysql_app_pass = cred_result
+            self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_cred_ok", self.mysql_app_user, self.mysql_app_pass), "success"))
+
+            self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_creating_db_user"), "info"))
+            self.root.after(0, lambda: self.update_progress(20, lang.tr("mysql_creating_db_user")))
+            sql_commands = [
+                "CREATE DATABASE IF NOT EXISTS cloudreve CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;",
+                f"CREATE USER IF NOT EXISTS '{self.mysql_app_user}'@'localhost' IDENTIFIED BY '{self.mysql_app_pass}';",
+                f"GRANT ALL PRIVILEGES ON cloudreve.* TO '{self.mysql_app_user}'@'localhost';",
+                "FLUSH PRIVILEGES;"
+            ]
+            for cmd in sql_commands:
+                try:
+                    subprocess.run([mysql_client] + mysql_auth + ["-e", cmd], timeout=10, check=True, creationflags=0x08000000)
+                except subprocess.CalledProcessError as e:
+                    error_msg = e.stderr.decode('gbk', errors='ignore')
+                    self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_sql_error", error_msg[:200]), "danger"))
+                    self.root.after(0, lambda: messagebox.showerror(lang.tr("error"), lang.tr("mysql_sql_error", error_msg[:200])))
+                    return
+            self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_db_user_created"), "success"))
+            self.root.after(0, lambda: self.update_progress(30, lang.tr("mysql_db_user_created")))
+
+            self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_updating_config"), "info"))
+            self.root.after(0, lambda: self.update_progress(40, lang.tr("mysql_updating_config")))
+            config = configparser.ConfigParser()
+            config.optionxform = str
+            config.read(self.CONF_PATH, encoding='utf-8')
+            if 'Database' not in config:
+                config['Database'] = {}
+            config['Database']['Type'] = 'mysql'
+            config['Database']['Host'] = '127.0.0.1'
+            config['Database']['Port'] = '3306'
+            config['Database']['User'] = self.mysql_app_user
+            config['Database']['Password'] = self.mysql_app_pass
+            config['Database']['Name'] = 'cloudreve'
+            config['Database']['Charset'] = 'utf8mb4'
+            with open(self.CONF_PATH, 'w', encoding='utf-8') as f:
+                config.write(f)
+            self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_config_updated"), "success"))
+            self.root.after(0, lambda: self.update_progress(50, lang.tr("mysql_config_updated")))
+
+            # 保存凭据（可选）
+            root_pwd = ""
+            for arg in mysql_auth:
+                if arg.startswith("-p"):
+                    root_pwd = arg[2:]
+                    break
+            cred_file = os.path.join(self.APP_DIR, "mysql_credentials.txt")
+            try:
+                with open(cred_file, 'w', encoding='utf-8') as f:
+                    f.write(f"MySQL root 密码：{root_pwd}\n")
+                    f.write(f"Cloudreve 数据库用户名：{self.mysql_app_user}\n")
+                    f.write(f"Cloudreve 数据库密码：{self.mysql_app_pass}\n")
+                self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_cred_saved", cred_file), "success"))
+            except Exception as e:
+                self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_cred_save_failed", str(e)), "warning"))
+
+            self.auto_backup_config()
+
+            self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_config_service"), "info"))
+            self.root.after(0, lambda: self.update_progress(55, lang.tr("mysql_config_service")))
+
+            ok, elapsed, err_msg = self._ensure_service_installed_and_started(start_after_install=True)
+            if not ok:
+                self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_service_failed", err_msg), "warning"))
+                self.root.after(0, lambda: messagebox.showwarning(lang.tr("start_failed"), lang.tr("mysql_service_failed", err_msg)))
+                return
             else:
-                error_msg = result.stderr.decode('gbk', errors='ignore')
-                raise Exception(f"连接失败：{error_msg[:200]}")
-        except Exception as e:
-            self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_manual_password_failed", str(e)), "danger"))
-            self.root.after(0, lambda: messagebox.showerror(lang.tr("error"), lang.tr("mysql_manual_password_failed", str(e))))
-            self.root.after(0, lambda: self.install_btn.config(state=NORMAL))
-            self.root.after(0, lambda: self.uninstall_btn.config(state=NORMAL))
-            self.root.after(0, self.refresh_service_status)
+                self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_service_started", elapsed), "success"))
 
-    def _ask_mysql_app_credentials(self, default_user="cloudreve", default_pass="your_password"):
-        try:
+            current_port = get_port_from_conf(self.CONF_PATH, self.DEFAULT_PORT)
+            try:
+                wait_for_port_open('localhost', current_port, max_wait=30)
+                self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_port_open", current_port), "success"))
+            except TimeoutError:
+                self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_port_timeout", current_port), "warning"))
+
+            self.root.after(0, lambda: self.update_progress(95, lang.tr("mysql_ready_open")))
+            url = f"http://localhost:{current_port}"
+            self.root.after(0, lambda: self._ask_open_url(url))
+        except Exception as e:
+            log.error(f"配置 MySQL 失败: {e}")
+            import traceback
+            log.error(f"异常详情: {traceback.format_exc()}")
+            self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_config_failed", str(e)), "danger"))
+            self.root.after(0, lambda: messagebox.showerror(lang.tr("error"), lang.tr("mysql_config_failed", str(e))))
+            self.root.after(0, lambda: self.update_progress(100, lang.tr("mysql_config_failed_short")))
+
+    def _get_mysql_app_credentials(self):
+        cred_event = threading.Event()
+        result = []
+
+        def ask():
+            default_user = "cloudreve"
+            default_pass = "your_password"
             user = simpledialog.askstring(
                 lang.tr("mysql_app_user_title"),
                 lang.tr("mysql_app_user_prompt", default_user),
@@ -1613,157 +1693,41 @@ class CloudreveManagerGUI:
                         break
                     pwd = pwd.strip()
 
-            self.mysql_app_user = user
-            self.mysql_app_pass = pwd
-        finally:
-            self.mysql_cred_event.set()
+            result.append((user, pwd))
+            cred_event.set()
+
+        self.root.after(0, ask)
+        cred_event.wait()
+        return result[0] if result else None
 
     def _show_default_cred_warning(self):
         messagebox.showinfo(lang.tr("default_cred_title"), lang.tr("default_cred_msg"))
 
-    def _continue_mysql_config(self, mysql_client, mysql_auth):
-        try:
-            self.root.after(0, lambda: self.update_progress(0, lang.tr("mysql_config_start")))
-
-            shutil.copy2(self.CONF_PATH, self.CONF_PATH + ".install_mysql_bak")
-            self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_backup_ok"), "info"))
-            self.root.after(0, lambda: self.update_progress(10, lang.tr("mysql_backup_complete")))
-
-            self.mysql_cred_event.clear()
-            self.root.after(0, lambda: self._ask_mysql_app_credentials())
-            waited = self.mysql_cred_event.wait(timeout=300)
-            if not waited:
-                self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_cred_timeout"), "warning"))
-                self.mysql_app_user = "cloudreve"
-                self.mysql_app_pass = "your_password"
-            else:
-                self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_cred_ok", self.mysql_app_user, self.mysql_app_pass), "success"))
-
-            self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_creating_db_user"), "info"))
-            self.root.after(0, lambda: self.update_progress(20, lang.tr("mysql_creating_db_user")))
-            sql_commands = [
-                "CREATE DATABASE IF NOT EXISTS cloudreve CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;",
-                f"CREATE USER IF NOT EXISTS '{self.mysql_app_user}'@'localhost' IDENTIFIED BY '{self.mysql_app_pass}';",
-                f"GRANT ALL PRIVILEGES ON cloudreve.* TO '{self.mysql_app_user}'@'localhost';",
-                "FLUSH PRIVILEGES;"
-            ]
-            for cmd in sql_commands:
-                try:
-                    subprocess.run([mysql_client] + mysql_auth + ["-e", cmd], timeout=10, check=True, creationflags=0x08000000)
-                except subprocess.CalledProcessError as e:
-                    error_msg = e.stderr.decode('gbk', errors='ignore')
-                    self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_sql_error", error_msg[:200]), "danger"))
-                    self.root.after(0, lambda: messagebox.showerror(lang.tr("error"), lang.tr("mysql_sql_error", error_msg[:200])))
-                    return
-            self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_db_user_created"), "success"))
-            self.root.after(0, lambda: self.update_progress(30, lang.tr("mysql_db_user_created")))
-
-            self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_updating_config"), "info"))
-            self.root.after(0, lambda: self.update_progress(40, lang.tr("mysql_updating_config")))
-            config = configparser.ConfigParser()
-            config.optionxform = str
-            config.read(self.CONF_PATH, encoding='utf-8')
-            if 'Database' not in config:
-                config['Database'] = {}
-            config['Database']['Type'] = 'mysql'
-            config['Database']['Host'] = '127.0.0.1'
-            config['Database']['Port'] = '3306'
-            config['Database']['User'] = self.mysql_app_user
-            config['Database']['Password'] = self.mysql_app_pass
-            config['Database']['Name'] = 'cloudreve'
-            config['Database']['Charset'] = 'utf8mb4'
-            with open(self.CONF_PATH, 'w', encoding='utf-8') as f:
-                config.write(f)
-            self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_config_updated"), "success"))
-            self.root.after(0, lambda: self.update_progress(50, lang.tr("mysql_config_updated")))
-
-            root_pwd = ""
-            for arg in mysql_auth:
-                if arg.startswith("-p"):
-                    root_pwd = arg[2:]
-                    break
-            if not root_pwd:
-                root_pwd = "unknown"
-            cred_file = os.path.join(self.APP_DIR, "mysql_credentials.txt")
-            try:
-                with open(cred_file, 'w', encoding='utf-8') as f:
-                    f.write(f"MySQL root 密码：{root_pwd}\n")
-                    f.write(f"Cloudreve 数据库用户名：{self.mysql_app_user}\n")
-                    f.write(f"Cloudreve 数据库密码：{self.mysql_app_pass}\n")
-                self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_cred_saved", cred_file), "success"))
-            except Exception as e:
-                self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_cred_save_failed", str(e)), "warning"))
-
-            self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_auto_backup"), "info"))
-            self.auto_backup_config()
-
-            # ========== 服务启动部分修复 ==========
-            self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_config_service"), "info"))
-            self.root.after(0, lambda: self.update_progress(55, lang.tr("mysql_config_service")))
-
-            # 确保服务已安装并启动
-            ok, elapsed, err_msg = self._ensure_service_installed_and_started(start_after_install=True)
-            if not ok:
-                self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_service_failed", err_msg), "warning"))
-                self.root.after(0, lambda: messagebox.showwarning(lang.tr("start_failed"), lang.tr("mysql_service_failed", err_msg)))
-                return
-            else:
-                self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_service_started", elapsed), "success"))
-
-            current_port = get_port_from_conf(self.CONF_PATH, self.DEFAULT_PORT)
-            try:
-                wait_for_port_open('localhost', current_port, max_wait=30)
-                self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_port_open", current_port), "success"))
-            except TimeoutError:
-                self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_port_timeout", current_port), "warning"))
-
-            self.root.after(0, lambda: self.update_progress(95, lang.tr("mysql_ready_open")))
-            url = f"http://localhost:{current_port}"
-
-            def ask_open():
-                result = messagebox.askokcancel(
-                    lang.tr("mysql_config_success_title"),
-                    lang.tr("mysql_config_success", url),
-                    parent=self.root
-                )
-                if result:
-                    webbrowser.open(url)
-                    self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_page_opened", url), "success"))
-                else:
-                    self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_page_cancel"), "info"))
-                self.root.after(0, lambda: self.update_progress(100, lang.tr("mysql_config_complete")))
-                self.root.after(0, lambda: self.update_statusbar(lang.tr("mysql_config_done"), bootstyle="success"))
-            self.root.after(0, ask_open)
-
-        except Exception as e:
-            log.error(f"继续配置 MySQL 失败: {e}")
-            import traceback
-            log.error(f"异常详情: {traceback.format_exc()}")
-            self.root.after(0, lambda: self.append_result_text(lang.tr("mysql_config_failed", str(e)), "danger"))
-            self.root.after(0, lambda: messagebox.showerror(lang.tr("error"), lang.tr("mysql_config_failed", str(e))))
-            self.root.after(0, lambda: self.update_progress(100, lang.tr("mysql_config_failed_short")))
+    def _ask_open_url(self, url):
+        if messagebox.askokcancel(lang.tr("mysql_config_success_title"), lang.tr("mysql_config_success", url), parent=self.root):
+            webbrowser.open(url)
+            self.append_result_text(lang.tr("mysql_page_opened", url), "success")
+        else:
+            self.append_result_text(lang.tr("mysql_page_cancel"), "info")
+        self.update_progress(100, lang.tr("mysql_config_complete"))
+        self.update_statusbar(lang.tr("mysql_config_done"), bootstyle="success")
 
     # ========== 打开网盘 ==========
     def start_open_cloudreve(self):
         self.clear_result_text()
         self.append_result_text(lang.tr("open_start"), "info")
-        open_thread = threading.Thread(target=self.open_cloudreve_worker, daemon=True)
-        open_thread.start()
+        self.root.after(0, lambda: self.install_btn.config(state=DISABLED))
+        self.root.after(0, lambda: self.uninstall_btn.config(state=DISABLED))
+        threading.Thread(target=self.open_cloudreve_worker, daemon=True).start()
 
     def open_cloudreve_worker(self):
         try:
-            self.install_btn.config(state=DISABLED)
-            self.uninstall_btn.config(state=DISABLED)
-
             self.root.after(0, lambda: self.update_progress(10, lang.tr("open_check_service")))
-            # 确保服务已安装并启动
             ok, elapsed, err_msg = self._ensure_service_installed_and_started(start_after_install=True)
             if not ok:
                 self.root.after(0, lambda: self.update_progress(100, lang.tr("open_service_failed")))
                 self.root.after(0, lambda: self.append_result_text(lang.tr("open_service_failed_msg", err_msg), "danger"))
                 self.root.after(0, lambda: messagebox.showwarning(lang.tr("open_failed"), lang.tr("open_service_failed_msg", err_msg)))
-                self.install_btn.config(state=NORMAL)
-                self.uninstall_btn.config(state=NORMAL)
                 return
             else:
                 self.root.after(0, lambda: self.append_result_text(lang.tr("open_service_started", elapsed), "success"))
@@ -1780,34 +1744,22 @@ class CloudreveManagerGUI:
                 self.root.after(0, lambda: self.update_progress(100, lang.tr("open_port_timeout")))
                 self.root.after(0, lambda: self.append_result_text(lang.tr("open_port_timeout_msg", current_port), "warning"))
                 self.root.after(0, lambda: messagebox.showwarning(lang.tr("open_failed"), lang.tr("open_port_timeout_msg", current_port)))
-                self.install_btn.config(state=NORMAL)
-                self.uninstall_btn.config(state=NORMAL)
                 return
 
             self.root.after(0, lambda: self.update_progress(95, lang.tr("open_open_browser")))
             url = f"http://localhost:{current_port}"
-            try:
-                webbrowser.open(url)
-                self.root.after(0, lambda: self.append_result_text(lang.tr("open_browser_ok", url), "success"))
-                log.info(f"打开网盘成功：{url}")
-            except Exception as e:
-                self.root.after(0, lambda: self.append_result_text(lang.tr("open_browser_failed", url, str(e)), "warning"))
-                self.root.after(0, lambda: messagebox.showwarning(lang.tr("open_failed"), lang.tr("open_browser_failed_msg", url)))
-
-            self.root.after(0, lambda: self.update_progress(100, lang.tr("open_complete")))
-            self.root.after(0, lambda: self.append_result_text(lang.tr("open_complete_msg"), "success"))
+            self.root.after(0, lambda: webbrowser.open(url))
+            self.root.after(0, lambda: self.append_result_text(lang.tr("open_browser_ok", url), "success"))
 
         except Exception as e:
             log.error(f"打开网盘异常: {e}")
-            import traceback
-            log.error(f"异常详情: {traceback.format_exc()}")
             self.root.after(0, lambda: self.append_result_text(lang.tr("open_exception", str(e)), "danger"))
             self.root.after(0, lambda: self.update_progress(100, lang.tr("open_exception_short")))
             self.root.after(0, lambda: messagebox.showerror(lang.tr("error"), lang.tr("open_exception", str(e))))
         finally:
-            self.install_btn.config(state=NORMAL)
-            self.uninstall_btn.config(state=NORMAL)
-            self.refresh_service_status()
+            self.root.after(0, lambda: self.install_btn.config(state=NORMAL))
+            self.root.after(0, lambda: self.uninstall_btn.config(state=NORMAL))
+            self.root.after(0, self.refresh_service_status)
 
     # ========== 端口检测 ==========
     def check_port_status(self):
@@ -1856,25 +1808,24 @@ class CloudreveManagerGUI:
 
     # ========== 安装模块 ==========
     def start_install(self):
+        if not check_admin_permission():
+            messagebox.showwarning(lang.tr("admin_required"), lang.tr("admin_required"))
+            return
         self.clear_result_text()
         self.append_result_text(lang.tr("install_start"), "info")
-        install_thread = threading.Thread(target=self.install_worker, daemon=True)
-        install_thread.start()
+        self.root.after(0, lambda: self.install_btn.config(state=DISABLED))
+        self.root.after(0, lambda: self.uninstall_btn.config(state=DISABLED))
+        threading.Thread(target=self.install_worker, daemon=True).start()
 
     def install_worker(self):
         try:
-            self.install_btn.config(state=DISABLED)
-            self.uninstall_btn.config(state=DISABLED)
-            
             self.root.after(0, lambda: self.update_progress(5, lang.tr("install_validate_port")))
             is_port_valid, current_port = self.validate_port()
             if not is_port_valid:
                 self.root.after(0, lambda: self.update_progress(100, lang.tr("install_port_invalid")))
                 self.root.after(0, lambda: self.append_result_text(lang.tr("install_port_invalid_msg", current_port), "danger"))
-                self.install_btn.config(state=NORMAL)
-                self.uninstall_btn.config(state=NORMAL)
                 return
-            
+
             self.root.after(0, lambda: self.update_progress(8, lang.tr("install_check_port_occupied")))
             if is_port_occupied(current_port):
                 proc = get_process_using_port(current_port)
@@ -1883,79 +1834,73 @@ class CloudreveManagerGUI:
                 else:
                     self.root.after(0, lambda: self.update_progress(100, lang.tr("install_port_occupied_other")))
                     self.root.after(0, lambda: self.append_result_text(lang.tr("install_port_occupied_other_msg", current_port, proc if proc else '未知'), "danger"))
-                    self.install_btn.config(state=NORMAL)
-                    self.uninstall_btn.config(state=NORMAL)
                     return
-            
+
             self.root.after(0, lambda: self.update_progress(10, lang.tr("install_check_admin")))
+            # 权限已在外层检查，但仍保留作为保险
             if not check_admin_permission():
                 self.root.after(0, lambda: self.update_progress(100, lang.tr("install_admin_failed")))
                 self.root.after(0, lambda: self.append_result_text(lang.tr("install_admin_required"), "danger"))
-                self.install_btn.config(state=NORMAL)
-                self.uninstall_btn.config(state=NORMAL)
                 return
-            
+
             self.root.after(0, lambda: self.update_progress(15, lang.tr("install_check_files")))
             if not os.path.exists(self.WINSW_EXE):
                 self.root.after(0, lambda: self.update_progress(100, lang.tr("install_missing_winsw")))
                 self.root.after(0, lambda: self.append_result_text(lang.tr("install_missing_winsw_msg", self.WINSW_EXE), "danger"))
-                self.install_btn.config(state=NORMAL)
-                self.uninstall_btn.config(state=NORMAL)
                 return
             if not os.path.exists(self.WINSW_XML):
                 self.root.after(0, lambda: self.update_progress(100, lang.tr("install_missing_xml")))
                 self.root.after(0, lambda: self.append_result_text(lang.tr("install_missing_xml_msg", self.WINSW_XML), "danger"))
-                self.install_btn.config(state=NORMAL)
-                self.uninstall_btn.config(state=NORMAL)
                 return
-            
+
             self.root.after(0, lambda: self.update_progress(20, lang.tr("install_firewall", current_port)))
             firewall_success, firewall_error = add_firewall_rule(current_port)
             if not firewall_success:
                 self.root.after(0, lambda: self.append_result_text(lang.tr("install_firewall_warning", firewall_error), "warning"))
-            
+
             self.root.after(0, lambda: self.update_progress(25, lang.tr("install_stop_service")))
             if check_service_exists(self.SERVICE_NAME):
                 stop_service(self.SERVICE_NAME)
                 self.root.after(0, lambda: self.append_result_text(lang.tr("install_stopped_service"), "success"))
             else:
                 self.root.after(0, lambda: self.append_result_text(lang.tr("install_no_service"), "info"))
-            
+
             self.root.after(0, lambda: self.update_progress(35, lang.tr("install_kill_process")))
             if check_process_exists(self.PROCESS_NAME):
                 kill_process(self.PROCESS_NAME)
                 self.root.after(0, lambda: self.append_result_text(lang.tr("install_killed_process"), "success"))
             else:
                 self.root.after(0, lambda: self.append_result_text(lang.tr("install_no_process"), "info"))
-            
+
             self.root.after(0, lambda: self.update_progress(40, lang.tr("install_install_service")))
             run_cmd_with_retry([self.WINSW_EXE, "install"], timeout=30)
             self.root.after(0, lambda: self.append_result_text(lang.tr("install_service_installed"), "success"))
-            
+
             self.root.after(0, lambda: self.update_progress(45, lang.tr("install_start_service")))
             start_service(self.SERVICE_NAME)
             self.root.after(0, lambda: self.append_result_text(lang.tr("install_start_command"), "success"))
-            
+
             self.root.after(0, lambda: self.update_progress(50, lang.tr("install_wait_service")))
             self.root.after(0, lambda: self.append_result_text(lang.tr("install_wait_service_msg"), "info"))
             service_started, status_msg, elapsed = wait_for_service_start(
                 self.SERVICE_NAME,
                 self.PROCESS_NAME,
                 status_callback=lambda: self.root.after(0, self.refresh_service_status),
-                progress_callback=lambda r, t, e, total: self.root.after(0, self.update_progress, 50 + int(30 * r / t), lang.tr("install_wait_progress", r, t))
+                progress_callback=lambda r, t, e, total: self.root.after(0, self.update_progress,
+                                                                         50 + int(30 * r / t),
+                                                                         lang.tr("install_wait_progress", r, t))
             )
             if not service_started:
                 self.root.after(0, lambda: self.update_progress(100, lang.tr("install_service_failed")))
                 self.root.after(0, lambda: self.append_result_text(lang.tr("install_service_failed_msg", elapsed, status_msg), "warning"))
-                self.install_btn.config(state=NORMAL)
-                self.uninstall_btn.config(state=NORMAL)
                 return
             else:
                 self.root.after(0, lambda: self.append_result_text(lang.tr("install_service_ok", elapsed), "success"))
-            
+
             self.root.after(0, lambda: self.update_progress(55, lang.tr("install_wait_config")))
             def conf_progress(elapsed, max_wait, remaining):
-                self.root.after(0, self.update_progress, 55 + int(25 * (elapsed / max_wait)), lang.tr("install_config_progress", elapsed, max_wait))
+                self.root.after(0, self.update_progress, 55 + int(25 * (elapsed / max_wait)),
+                                lang.tr("install_config_progress", elapsed, max_wait))
             conf_generated = wait_for_conf_file(self.CONF_PATH, timeout=120, progress_callback=conf_progress)
             if not conf_generated:
                 self.root.after(0, lambda: self.update_progress(100, lang.tr("install_config_timeout")))
@@ -1967,44 +1912,35 @@ class CloudreveManagerGUI:
                     self.root.after(0, lambda: self.append_result_text(lang.tr("install_port_synced", current_port), "success"))
                 else:
                     self.root.after(0, lambda: self.append_result_text(lang.tr("install_port_sync_failed"), "warning"))
-                
+
                 self.root.after(0, lambda: self.update_progress(70, lang.tr("install_restart_service")))
                 stop_service(self.SERVICE_NAME)
                 time.sleep(3)
                 start_service(self.SERVICE_NAME)
                 self.root.after(0, lambda: self.append_result_text(lang.tr("install_restarted"), "success"))
-                
+
                 self.root.after(0, lambda: self.update_progress(80, lang.tr("install_wait_port")))
                 def port_progress(elapsed, max_wait, remaining):
-                    self.root.after(0, self.update_progress, 80 + int(15 * (elapsed / max_wait)), lang.tr("install_port_progress", elapsed, max_wait))
+                    self.root.after(0, self.update_progress, 80 + int(15 * (elapsed / max_wait)),
+                                    lang.tr("install_port_progress", elapsed, max_wait))
                 try:
                     wait_for_port_open('localhost', current_port, max_wait=30, progress_callback=port_progress)
                     self.root.after(0, lambda: self.append_result_text(lang.tr("install_port_ok", current_port), "success"))
                 except TimeoutError:
                     self.root.after(0, lambda: self.append_result_text(lang.tr("install_port_timeout", current_port), "warning"))
-                
+
                 self.root.after(0, lambda: self.update_progress(90, lang.tr("install_ready_open")))
                 url = f"http://localhost:{current_port}"
-                def ask_open():
-                    result = messagebox.askokcancel(
-                        lang.tr("install_success_title"),
-                        lang.tr("install_success", url),
-                        parent=self.root
-                    )
-                    if result:
-                        webbrowser.open(url)
-                        self.root.after(0, lambda: self.append_result_text(lang.tr("install_page_opened", url), "success"))
-                    else:
-                        self.root.after(0, lambda: self.append_result_text(lang.tr("install_page_cancel"), "info"))
-                self.root.after(0, ask_open)
-                
+                self.root.after(0, lambda: self._ask_open_url(url))
+
                 self.root.after(0, lambda: self.update_progress(95, lang.tr("install_enable_away")))
                 if enable_away_mode():
                     self.root.after(0, lambda: self.append_result_text(lang.tr("install_away_enabled"), "success"))
                 else:
                     self.root.after(0, lambda: self.append_result_text(lang.tr("install_away_failed"), "warning"))
-                
-                self.root.after(0, lambda: self.append_result_text(lang.tr("install_complete", url, self.SERVICE_NAME, self.PROCESS_NAME), "success"))
+
+                self.root.after(0, lambda: self.append_result_text(lang.tr("install_complete", url, self.SERVICE_NAME,
+                                                                       self.PROCESS_NAME), "success"))
         except Exception as e:
             log.error(f"安装异常: {e}")
             import traceback
@@ -2012,66 +1948,66 @@ class CloudreveManagerGUI:
             self.root.after(0, lambda: self.append_result_text(lang.tr("install_exception", str(e)), "danger"))
             self.root.after(0, lambda: self.update_progress(100, lang.tr("install_exception_short")))
         finally:
-            self.install_btn.config(state=NORMAL)
-            self.uninstall_btn.config(state=NORMAL)
-            self.refresh_service_status()
+            self.root.after(0, lambda: self.install_btn.config(state=NORMAL))
+            self.root.after(0, lambda: self.uninstall_btn.config(state=NORMAL))
+            self.root.after(0, self.refresh_service_status)
 
     # ========== 卸载模块 ==========
     def start_uninstall(self):
+        if not check_admin_permission():
+            messagebox.showwarning(lang.tr("admin_required"), lang.tr("admin_required"))
+            return
         self.clear_result_text()
         self.append_result_text(lang.tr("uninstall_start"), "info")
-        uninstall_thread = threading.Thread(target=self.uninstall_worker, daemon=True)
-        uninstall_thread.start()
+        self.root.after(0, lambda: self.install_btn.config(state=DISABLED))
+        self.root.after(0, lambda: self.uninstall_btn.config(state=DISABLED))
+        threading.Thread(target=self.uninstall_worker, daemon=True).start()
 
     def uninstall_worker(self):
         try:
-            self.install_btn.config(state=DISABLED)
-            self.uninstall_btn.config(state=DISABLED)
-            
             self.root.after(0, lambda: self.update_progress(10, lang.tr("uninstall_check_admin")))
             if not check_admin_permission():
                 self.root.after(0, lambda: self.update_progress(100, lang.tr("uninstall_admin_failed")))
                 self.root.after(0, lambda: self.append_result_text(lang.tr("uninstall_admin_required"), "danger"))
-                self.install_btn.config(state=NORMAL)
-                self.uninstall_btn.config(state=NORMAL)
                 return
-            
+
             self.root.after(0, lambda: self.update_progress(20, lang.tr("uninstall_stop_service")))
             if check_service_exists(self.SERVICE_NAME):
                 stop_service(self.SERVICE_NAME)
                 self.root.after(0, lambda: self.append_result_text(lang.tr("uninstall_stopped_service"), "success"))
             else:
                 self.root.after(0, lambda: self.append_result_text(lang.tr("uninstall_no_service"), "info"))
-            
+
             self.root.after(0, lambda: self.update_progress(30, lang.tr("uninstall_kill_process")))
             if check_process_exists(self.PROCESS_NAME):
                 kill_process(self.PROCESS_NAME)
                 self.root.after(0, lambda: self.append_result_text(lang.tr("uninstall_killed_process"), "success"))
             else:
                 self.root.after(0, lambda: self.append_result_text(lang.tr("uninstall_no_process"), "info"))
-            
+
             self.root.after(0, lambda: self.update_progress(40, lang.tr("uninstall_uninstall_service")))
             if os.path.exists(self.WINSW_EXE):
                 run_cmd_with_retry([self.WINSW_EXE, "uninstall"], timeout=30)
                 self.root.after(0, lambda: self.append_result_text(lang.tr("uninstall_service_uninstalled"), "success"))
             else:
                 self.root.after(0, lambda: self.append_result_text(lang.tr("uninstall_winsw_missing"), "warning"))
-            
+
             self.root.after(0, lambda: self.update_progress(50, lang.tr("uninstall_clean_firewall")))
             current_port = get_port_from_conf(self.CONF_PATH, self.DEFAULT_PORT)
+            rule_name = f"Cloudreve_Port_{current_port}"
             try:
-                run_cmd_with_retry(['cmd', '/c', f'netsh advfirewall firewall delete rule name="Cloudreve_Port_Inbound"'], timeout=10)
-                run_cmd_with_retry(['cmd', '/c', f'netsh advfirewall firewall delete rule name="Cloudreve_Port_Outbound"'], timeout=10)
+                run_cmd_with_retry(['cmd', '/c', f'netsh advfirewall firewall delete rule name="{rule_name}_Inbound"'], timeout=10)
+                run_cmd_with_retry(['cmd', '/c', f'netsh advfirewall firewall delete rule name="{rule_name}_Outbound"'], timeout=10)
                 self.root.after(0, lambda: self.append_result_text(lang.tr("uninstall_firewall_cleaned"), "success"))
             except Exception as e:
                 self.root.after(0, lambda: self.append_result_text(lang.tr("uninstall_firewall_failed", str(e)), "warning"))
-            
+
             self.root.after(0, lambda: self.update_progress(60, lang.tr("uninstall_disable_away")))
             if disable_away_mode():
                 self.root.after(0, lambda: self.append_result_text(lang.tr("uninstall_away_disabled"), "success"))
             else:
                 self.root.after(0, lambda: self.append_result_text(lang.tr("uninstall_away_failed"), "warning"))
-            
+
             self.root.after(0, lambda: self.update_progress(100, lang.tr("uninstall_complete")))
             self.root.after(0, lambda: self.append_result_text(lang.tr("uninstall_complete_msg"), "success"))
             self.root.after(0, lambda: messagebox.showinfo(lang.tr("uninstall_success_title"), lang.tr("uninstall_success"), parent=self.root))
@@ -2083,9 +2019,9 @@ class CloudreveManagerGUI:
             self.root.after(0, lambda: self.update_progress(100, lang.tr("uninstall_exception_short")))
             self.root.after(0, lambda: messagebox.showerror(lang.tr("error"), lang.tr("uninstall_exception", str(e)), parent=self.root))
         finally:
-            self.install_btn.config(state=NORMAL)
-            self.uninstall_btn.config(state=NORMAL)
-            self.refresh_service_status()
+            self.root.after(0, lambda: self.install_btn.config(state=NORMAL))
+            self.root.after(0, lambda: self.uninstall_btn.config(state=NORMAL))
+            self.root.after(0, self.refresh_service_status)
 
     # ========== 启动服务（菜单调用） ==========
     def start_service_action(self):
@@ -2112,20 +2048,6 @@ class CloudreveManagerGUI:
         finally:
             self.root.after(0, self.refresh_service_status)
 
-    def _install_service_only(self):
-        """仅安装服务（不启动）"""
-        try:
-            if check_process_exists(self.PROCESS_NAME):
-                kill_process(self.PROCESS_NAME)
-                self.root.after(0, lambda: self.append_result_text(lang.tr("install_service_kill_old"), "success"))
-            run_cmd_with_retry([self.WINSW_EXE, "install"], timeout=30)
-            log.info("服务安装完成")
-            self.root.after(0, lambda: self.append_result_text(lang.tr("install_service_installed_ok"), "success"))
-        except Exception as e:
-            log.error(f"安装服务失败: {e}")
-            self.root.after(0, lambda: self.append_result_text(lang.tr("install_service_failed", str(e)), "danger"))
-            raise
-
     # ========== 停止服务（菜单调用） ==========
     def stop_service_action(self):
         self.append_result_text(lang.tr("stop_service_start"), "info")
@@ -2147,7 +2069,7 @@ class CloudreveManagerGUI:
                 progress = 40 + int(50 * (i + 1) / 10)
                 self.root.after(0, self.update_progress, progress, lang.tr("stop_service_wait_progress", i+1, 10))
                 time.sleep(1)
-            
+
             self.root.after(0, lambda: self.append_result_text(lang.tr("stop_service_ok"), "success"))
             self.root.after(0, lambda: self.update_progress(100, lang.tr("stop_service_complete")))
             self.root.after(0, lambda: messagebox.showinfo(lang.tr("stop_success_title"), lang.tr("stop_service_success"), parent=self.root))
@@ -2160,27 +2082,54 @@ class CloudreveManagerGUI:
 
     # ========== 升级模块 ==========
     def start_upgrade(self):
-        choice = messagebox.askquestion(
-            lang.tr("upgrade_choice_title"),
-            lang.tr("upgrade_choice_msg"),
-            icon='question'
-        )
-        if choice == 'yes':
-            self.clear_result_text()
-            self.append_result_text(lang.tr("auto_upgrade_start"), "info")
-            upgrade_thread = threading.Thread(target=self.auto_upgrade_worker, daemon=True)
-            upgrade_thread.start()
-        else:
-            self.clear_result_text()
-            self.append_result_text(lang.tr("manual_upgrade_start"), "info")
-            upgrade_thread = threading.Thread(target=self.manual_upgrade_worker, daemon=True)
-            upgrade_thread.start()
+        # 先获取信息并弹窗确认，再启动线程
+        threading.Thread(target=self._pre_upgrade_check, daemon=True).start()
+
+    def _pre_upgrade_check(self):
+        try:
+            # 获取当前版本
+            current_version = get_current_version(self.CLOUDREVE_EXE)
+            self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_current", current_version or "未知"), "info"))
+            # 获取最新版本（可能网络错误）
+            try:
+                latest_version = get_latest_version_from_github()
+                self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_latest", latest_version), "info"))
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror(lang.tr("network_error"), str(e)))
+                return
+
+            # 判断是否需要升级
+            need_upgrade = not current_version or compare_versions(current_version, latest_version)
+            if not need_upgrade:
+                self.root.after(0, lambda: messagebox.showinfo(lang.tr("no_upgrade"),
+                                                               lang.tr("auto_upgrade_already_latest_msg", current_version)))
+                return
+
+            # 在主线程询问升级类型
+            def ask():
+                choice = messagebox.askquestion(lang.tr("upgrade_choice_title"), lang.tr("upgrade_choice_msg"))
+                if choice == 'yes':
+                    # 升级确认
+                    confirm = messagebox.askyesno(lang.tr("upgrade_confirm_title"),
+                                                  lang.tr("upgrade_confirm_msg", latest_version, current_version or '未知'))
+                    if confirm:
+                        self.clear_result_text()
+                        self.append_result_text(lang.tr("auto_upgrade_start"), "info")
+                        self.root.after(0, lambda: self.install_btn.config(state=DISABLED))
+                        self.root.after(0, lambda: self.uninstall_btn.config(state=DISABLED))
+                        threading.Thread(target=self.auto_upgrade_worker, daemon=True).start()
+                else:
+                    self.clear_result_text()
+                    self.append_result_text(lang.tr("manual_upgrade_start"), "info")
+                    self.root.after(0, lambda: self.install_btn.config(state=DISABLED))
+                    self.root.after(0, lambda: self.uninstall_btn.config(state=DISABLED))
+                    threading.Thread(target=self.manual_upgrade_worker, daemon=True).start()
+            self.root.after(0, ask)
+        except Exception as e:
+            self.root.after(0, lambda: messagebox.showerror(lang.tr("error"), str(e)))
 
     def auto_upgrade_worker(self):
         try:
-            self.install_btn.config(state=DISABLED)
-            self.uninstall_btn.config(state=DISABLED)
-
             self.root.after(0, lambda: self.update_progress(5, lang.tr("auto_upgrade_check_version")))
             current_version = get_current_version(self.CLOUDREVE_EXE)
             if current_version:
@@ -2191,46 +2140,17 @@ class CloudreveManagerGUI:
             self.root.after(0, lambda: self.update_progress(10, lang.tr("auto_upgrade_fetch_latest")))
             try:
                 latest_version = get_latest_version_from_github()
-                self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_latest", latest_version), "info"))
             except Exception as e:
                 self.root.after(0, lambda: self.update_progress(100, lang.tr("auto_upgrade_network_error")))
                 self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_fetch_failed", str(e)), "danger"))
-                self.root.after(0, lambda: messagebox.showerror(lang.tr("network_error"), lang.tr("auto_upgrade_network_error_msg", str(e))))
-                self.install_btn.config(state=NORMAL)
-                self.uninstall_btn.config(state=NORMAL)
-                return
-
-            if current_version and not compare_versions(current_version, latest_version):
-                self.root.after(0, lambda: self.update_progress(100, lang.tr("auto_upgrade_already_latest")))
-                self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_already_latest_msg"), "success"))
-                self.root.after(0, lambda: messagebox.showinfo(lang.tr("no_upgrade"), lang.tr("auto_upgrade_already_latest_msg", current_version)))
-                self.install_btn.config(state=NORMAL)
-                self.uninstall_btn.config(state=NORMAL)
-                return
-
-            confirm = messagebox.askyesno(
-                lang.tr("upgrade_confirm_title"),
-                lang.tr("upgrade_confirm_msg", latest_version, current_version or '未知')
-            )
-            if not confirm:
-                self.root.after(0, lambda: self.update_progress(100, lang.tr("upgrade_cancelled")))
-                self.root.after(0, lambda: self.append_result_text(lang.tr("upgrade_cancelled_msg"), "warning"))
-                self.install_btn.config(state=NORMAL)
-                self.uninstall_btn.config(state=NORMAL)
                 return
 
             self.root.after(0, lambda: self.update_progress(20, lang.tr("auto_upgrade_get_url")))
             try:
                 download_url = get_download_url_from_github()
-                if not download_url:
-                    raise RuntimeError("未找到适用于Windows的下载链接")
-                self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_url_ok"), "info"))
             except Exception as e:
                 self.root.after(0, lambda: self.update_progress(100, lang.tr("auto_upgrade_url_failed")))
                 self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_url_failed_msg", str(e)), "danger"))
-                self.root.after(0, lambda: messagebox.showerror(lang.tr("error"), lang.tr("auto_upgrade_url_failed_msg", str(e))))
-                self.install_btn.config(state=NORMAL)
-                self.uninstall_btn.config(state=NORMAL)
                 return
 
             self.root.after(0, lambda: self.update_progress(25, lang.tr("auto_upgrade_download")))
@@ -2245,9 +2165,6 @@ class CloudreveManagerGUI:
             except Exception as e:
                 self.root.after(0, lambda: self.update_progress(100, lang.tr("auto_upgrade_download_failed")))
                 self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_download_failed_msg", str(e)), "danger"))
-                self.root.after(0, lambda: messagebox.showerror(lang.tr("download_failed"), lang.tr("auto_upgrade_download_failed_msg", str(e))))
-                self.install_btn.config(state=NORMAL)
-                self.uninstall_btn.config(state=NORMAL)
                 return
 
             self.root.after(0, lambda: self.update_progress(60, lang.tr("auto_upgrade_extract")))
@@ -2255,13 +2172,9 @@ class CloudreveManagerGUI:
             try:
                 with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                     zip_ref.extractall(extract_dir)
-                self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_extract_ok"), "success"))
             except Exception as e:
                 self.root.after(0, lambda: self.update_progress(100, lang.tr("auto_upgrade_extract_failed")))
                 self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_extract_failed_msg", str(e)), "danger"))
-                self.root.after(0, lambda: messagebox.showerror(lang.tr("extract_failed"), lang.tr("auto_upgrade_extract_failed_msg", str(e))))
-                self.install_btn.config(state=NORMAL)
-                self.uninstall_btn.config(state=NORMAL)
                 return
 
             new_exe_path = None
@@ -2275,35 +2188,25 @@ class CloudreveManagerGUI:
             if not new_exe_path:
                 self.root.after(0, lambda: self.update_progress(100, lang.tr("auto_upgrade_no_exe")))
                 self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_no_exe_msg"), "danger"))
-                self.root.after(0, lambda: messagebox.showerror(lang.tr("file_missing"), lang.tr("auto_upgrade_no_exe_msg")))
-                self.install_btn.config(state=NORMAL)
-                self.uninstall_btn.config(state=NORMAL)
                 return
 
             service_exists_before = check_service_exists(self.SERVICE_NAME)
-            self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_service_before", "存在" if service_exists_before else "不存在"), "info"))
+            self.root.after(0, lambda: self.append_result_text(
+                lang.tr("auto_upgrade_service_before", "存在" if service_exists_before else "不存在"), "info"))
 
             if service_exists_before:
                 self.root.after(0, lambda: self.update_progress(65, lang.tr("auto_upgrade_stop_service")))
                 if check_service_exists(self.SERVICE_NAME):
                     stop_service(self.SERVICE_NAME)
                     self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_stopped"), "success"))
-                else:
-                    self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_not_running"), "info"))
-
-                self.root.after(0, lambda: self.update_progress(70, lang.tr("auto_upgrade_kill_process")))
                 if check_process_exists(self.PROCESS_NAME):
                     kill_process(self.PROCESS_NAME)
                     self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_killed"), "success"))
-                else:
-                    self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_no_process"), "info"))
             else:
                 self.root.after(0, lambda: self.update_progress(65, lang.tr("auto_upgrade_check_residual")))
                 if check_process_exists(self.PROCESS_NAME):
                     kill_process(self.PROCESS_NAME)
                     self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_killed_residual"), "success"))
-                else:
-                    self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_no_residual"), "info"))
 
             self.root.after(0, lambda: self.update_progress(75, lang.tr("auto_upgrade_backup")))
             backup_path = self.CLOUDREVE_EXE + ".bak"
@@ -2317,34 +2220,21 @@ class CloudreveManagerGUI:
             self.root.after(0, lambda: self.update_progress(80, lang.tr("auto_upgrade_replace")))
             try:
                 shutil.copy2(new_exe_path, self.CLOUDREVE_EXE)
-                self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_replace_ok", self.CLOUDREVE_EXE), "success"))
-                if os.path.exists(self.CLOUDREVE_EXE):
-                    mod_time = os.path.getmtime(self.CLOUDREVE_EXE)
-                    mod_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mod_time))
-                    self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_file_date", mod_time_str), "info"))
             except Exception as e:
                 self.root.after(0, lambda: self.update_progress(100, lang.tr("auto_upgrade_replace_failed")))
                 self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_replace_failed_msg", str(e)), "danger"))
-                self.root.after(0, lambda: messagebox.showerror(lang.tr("replace_failed"), lang.tr("auto_upgrade_replace_failed_msg", str(e))))
-                self.install_btn.config(state=NORMAL)
-                self.uninstall_btn.config(state=NORMAL)
                 return
 
             if service_exists_before:
                 self.root.after(0, lambda: self.update_progress(85, lang.tr("auto_upgrade_start_service")))
-                # 使用统一方法确保服务启动
                 ok, elapsed, err_msg = self._ensure_service_installed_and_started(start_after_install=True)
                 if not ok:
                     self.root.after(0, lambda: self.update_progress(100, lang.tr("auto_upgrade_start_failed")))
                     self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_start_failed_msg", err_msg), "warning"))
-                    self.root.after(0, lambda: messagebox.showwarning(lang.tr("start_failed"), lang.tr("auto_upgrade_start_failed_msg", err_msg)))
-                    self.install_btn.config(state=NORMAL)
-                    self.uninstall_btn.config(state=NORMAL)
                     return
                 else:
                     self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_start_ok", elapsed), "success"))
 
-                self.root.after(0, lambda: self.update_progress(93, lang.tr("auto_upgrade_wait_port")))
                 current_port = get_port_from_conf(self.CONF_PATH, self.DEFAULT_PORT)
                 try:
                     wait_for_port_open('localhost', current_port, max_wait=30)
@@ -2354,122 +2244,80 @@ class CloudreveManagerGUI:
 
                 self.root.after(0, lambda: self.update_progress(96, lang.tr("auto_upgrade_open_browser")))
                 url = f"http://localhost:{current_port}"
-                try:
-                    webbrowser.open(url)
-                    self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_browser_ok", url), "success"))
-                except Exception as e:
-                    self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_browser_failed", url, str(e)), "warning"))
-
-                self.root.after(0, lambda: self.update_progress(100, lang.tr("auto_upgrade_complete")))
-                if os.path.exists(self.CLOUDREVE_EXE):
-                    mod_time = os.path.getmtime(self.CLOUDREVE_EXE)
-                    mod_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mod_time))
-                else:
-                    mod_time_str = "未知"
-                self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_complete_msg", latest_version, url, mod_time_str, backup_path), "success"))
+                self.root.after(0, lambda: webbrowser.open(url))
+                self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_browser_ok", url), "success"))
             else:
-                self.root.after(0, lambda: self.update_progress(100, lang.tr("auto_upgrade_complete_no_service")))
-                if os.path.exists(self.CLOUDREVE_EXE):
-                    mod_time = os.path.getmtime(self.CLOUDREVE_EXE)
-                    mod_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mod_time))
-                else:
-                    mod_time_str = "未知"
-                self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_complete_no_service_msg", mod_time_str, backup_path), "success"))
+                url = ""
+            self.root.after(0, lambda: self.update_progress(100, lang.tr("auto_upgrade_complete")))
+            mod_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(os.path.getmtime(self.CLOUDREVE_EXE)))
+            self.root.after(0, lambda: self.append_result_text(
+                lang.tr("auto_upgrade_complete_msg", latest_version, url, mod_time_str, backup_path), "success"))
 
+        except Exception as e:
+            log.error(f"自动升级异常: {e}")
+            self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_exception", str(e)), "danger"))
+        finally:
+            self.root.after(0, lambda: self.install_btn.config(state=NORMAL))
+            self.root.after(0, lambda: self.uninstall_btn.config(state=NORMAL))
+            self.root.after(0, self.refresh_service_status)
             try:
                 if os.path.exists(zip_path):
                     os.remove(zip_path)
                 if os.path.exists(extract_dir):
                     shutil.rmtree(extract_dir, ignore_errors=True)
-                os.rmdir(TEMP_DIR)
             except:
                 pass
 
-        except Exception as e:
-            log.error(f"自动升级异常: {e}")
-            import traceback
-            log.error(f"异常详情: {traceback.format_exc()}")
-            self.root.after(0, lambda: self.append_result_text(lang.tr("auto_upgrade_exception", str(e)), "danger"))
-            self.root.after(0, lambda: self.update_progress(100, lang.tr("auto_upgrade_exception_short")))
-            self.root.after(0, lambda: messagebox.showerror(lang.tr("error"), lang.tr("auto_upgrade_exception", str(e))))
-        finally:
-            self.install_btn.config(state=NORMAL)
-            self.uninstall_btn.config(state=NORMAL)
-            self.refresh_service_status()
-
     def manual_upgrade_worker(self):
         try:
-            self.install_btn.config(state=DISABLED)
-            self.uninstall_btn.config(state=DISABLED)
-
-            self.root.after(0, lambda: self.update_progress(10, lang.tr("manual_upgrade_check_admin")))
             if not check_admin_permission():
-                self.root.after(0, lambda: self.update_progress(100, lang.tr("manual_upgrade_admin_failed")))
-                self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_admin_required"), "danger"))
-                self.install_btn.config(state=NORMAL)
-                self.uninstall_btn.config(state=NORMAL)
+                self.root.after(0, lambda: messagebox.showerror(lang.tr("error"), lang.tr("admin_required")))
                 return
 
             self.root.after(0, lambda: self.update_progress(15, lang.tr("manual_upgrade_check_service")))
             service_exists_before = check_service_exists(self.SERVICE_NAME)
-            self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_service_before", "存在" if service_exists_before else "不存在"), "info"))
-            if not service_exists_before:
-                self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_no_service_warning"), "warning"))
 
             self.root.after(0, lambda: self.update_progress(20, lang.tr("manual_upgrade_select_file")))
-            new_exe_path = filedialog.askopenfilename(
-                title=lang.tr("manual_upgrade_select_title"),
-                initialfile="cloudreve.exe",
-                filetypes=[("可执行文件", "*.exe"), ("所有文件", "*.*")]
-            )
+            # 文件选择必须在主线程，所以用事件同步
+            file_event = threading.Event()
+            selected_file = []
+
+            def ask_file():
+                path = filedialog.askopenfilename(
+                    title=lang.tr("manual_upgrade_select_title"),
+                    initialfile="cloudreve.exe",
+                    filetypes=[("可执行文件", "*.exe"), ("所有文件", "*.*")]
+                )
+                selected_file.append(path)
+                file_event.set()
+            self.root.after(0, ask_file)
+            file_event.wait()
+            new_exe_path = selected_file[0] if selected_file else None
             if not new_exe_path:
                 self.root.after(0, lambda: self.update_progress(100, lang.tr("manual_upgrade_cancelled")))
-                self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_cancelled_msg"), "warning"))
-                self.install_btn.config(state=NORMAL)
-                self.uninstall_btn.config(state=NORMAL)
                 return
 
             selected_filename = os.path.basename(new_exe_path)
             if selected_filename.lower() != "cloudreve.exe":
-                self.root.after(0, lambda: self.update_progress(100, lang.tr("manual_upgrade_wrong_name")))
                 self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_wrong_name_msg", selected_filename), "danger"))
-                self.install_btn.config(state=NORMAL)
-                self.uninstall_btn.config(state=NORMAL)
                 return
 
             if not os.path.isfile(new_exe_path):
-                self.root.after(0, lambda: self.update_progress(100, lang.tr("manual_upgrade_invalid_file")))
                 self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_invalid_file_msg"), "danger"))
-                self.install_btn.config(state=NORMAL)
-                self.uninstall_btn.config(state=NORMAL)
                 return
 
             self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_selected", new_exe_path), "info"))
-
             current_port = get_port_from_conf(self.CONF_PATH, self.DEFAULT_PORT)
-            self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_port", current_port), "info"))
 
             if service_exists_before:
                 self.root.after(0, lambda: self.update_progress(30, lang.tr("manual_upgrade_stop_service")))
                 if check_service_exists(self.SERVICE_NAME):
                     stop_service(self.SERVICE_NAME)
-                    self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_stopped"), "success"))
-                else:
-                    self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_not_running"), "info"))
-
-                self.root.after(0, lambda: self.update_progress(40, lang.tr("manual_upgrade_kill_process")))
                 if check_process_exists(self.PROCESS_NAME):
                     kill_process(self.PROCESS_NAME)
-                    self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_killed"), "success"))
-                else:
-                    self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_no_process"), "info"))
             else:
-                self.root.after(0, lambda: self.update_progress(30, lang.tr("manual_upgrade_check_residual")))
                 if check_process_exists(self.PROCESS_NAME):
                     kill_process(self.PROCESS_NAME)
-                    self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_killed_residual"), "success"))
-                else:
-                    self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_no_residual"), "info"))
 
             self.root.after(0, lambda: self.update_progress(50, lang.tr("manual_upgrade_backup")))
             backup_path = self.CLOUDREVE_EXE + ".bak"
@@ -2479,22 +2327,14 @@ class CloudreveManagerGUI:
                     self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_backup_ok", backup_path), "success"))
                 except Exception as e:
                     self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_backup_failed", str(e)), "warning"))
-            else:
-                self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_no_backup"), "info"))
 
             self.root.after(0, lambda: self.update_progress(60, lang.tr("manual_upgrade_replace")))
             try:
                 shutil.copy2(new_exe_path, self.CLOUDREVE_EXE)
                 self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_replace_ok", self.CLOUDREVE_EXE), "success"))
-                if os.path.exists(self.CLOUDREVE_EXE):
-                    mod_time = os.path.getmtime(self.CLOUDREVE_EXE)
-                    mod_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mod_time))
-                    self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_file_date", mod_time_str), "info"))
             except Exception as e:
                 self.root.after(0, lambda: self.update_progress(100, lang.tr("manual_upgrade_replace_failed")))
                 self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_replace_failed_msg", str(e)), "danger"))
-                self.install_btn.config(state=NORMAL)
-                self.uninstall_btn.config(state=NORMAL)
                 return
 
             if service_exists_before:
@@ -2503,56 +2343,29 @@ class CloudreveManagerGUI:
                 if not ok:
                     self.root.after(0, lambda: self.update_progress(100, lang.tr("manual_upgrade_start_failed")))
                     self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_start_failed_msg", elapsed, err_msg), "warning"))
-                    self.install_btn.config(state=NORMAL)
-                    self.uninstall_btn.config(state=NORMAL)
                     return
-                else:
-                    self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_start_ok", elapsed), "success"))
-
-                self.root.after(0, lambda: self.update_progress(90, lang.tr("manual_upgrade_wait_port")))
-                def port_progress(elapsed, max_wait, remaining):
-                    self.root.after(0, self.update_progress, 90 + int(5 * (elapsed / max_wait)), lang.tr("manual_upgrade_port_progress", elapsed, max_wait))
+                self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_start_ok", elapsed), "success"))
                 try:
-                    wait_for_port_open('localhost', current_port, max_wait=30, progress_callback=port_progress)
+                    wait_for_port_open('localhost', current_port, max_wait=30)
                     self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_port_ok", current_port), "success"))
                 except TimeoutError:
                     self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_port_timeout", current_port), "warning"))
-
-                self.root.after(0, lambda: self.update_progress(95, lang.tr("manual_upgrade_open_browser")))
                 url = f"http://localhost:{current_port}"
-                try:
-                    webbrowser.open(url)
-                    self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_browser_ok", url), "success"))
-                except Exception as e:
-                    self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_browser_failed", url, str(e)), "warning"))
-
-                self.root.after(0, lambda: self.update_progress(100, lang.tr("manual_upgrade_complete")))
-                if os.path.exists(self.CLOUDREVE_EXE):
-                    mod_time = os.path.getmtime(self.CLOUDREVE_EXE)
-                    mod_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mod_time))
-                else:
-                    mod_time_str = "未知"
-                self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_complete_msg", url, mod_time_str, backup_path), "success"))
+                self.root.after(0, lambda: webbrowser.open(url))
             else:
-                self.root.after(0, lambda: self.update_progress(100, lang.tr("manual_upgrade_complete_no_service")))
-                if os.path.exists(self.CLOUDREVE_EXE):
-                    mod_time = os.path.getmtime(self.CLOUDREVE_EXE)
-                    mod_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mod_time))
-                else:
-                    mod_time_str = "未知"
-                self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_complete_no_service_msg", mod_time_str, backup_path), "success"))
+                url = ""
 
+            self.root.after(0, lambda: self.update_progress(100, lang.tr("manual_upgrade_complete")))
+            mod_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(os.path.getmtime(self.CLOUDREVE_EXE)))
+            self.root.after(0, lambda: self.append_result_text(
+                lang.tr("manual_upgrade_complete_msg", url, mod_time_str, backup_path), "success"))
         except Exception as e:
             log.error(f"手动升级异常: {e}")
-            import traceback
-            log.error(f"异常详情: {traceback.format_exc()}")
             self.root.after(0, lambda: self.append_result_text(lang.tr("manual_upgrade_exception", str(e)), "danger"))
-            self.root.after(0, lambda: self.update_progress(100, lang.tr("manual_upgrade_exception_short")))
-            self.root.after(0, lambda: messagebox.showerror(lang.tr("error"), lang.tr("manual_upgrade_exception", str(e))))
         finally:
-            self.install_btn.config(state=NORMAL)
-            self.uninstall_btn.config(state=NORMAL)
-            self.refresh_service_status()
+            self.root.after(0, lambda: self.install_btn.config(state=NORMAL))
+            self.root.after(0, lambda: self.uninstall_btn.config(state=NORMAL))
+            self.root.after(0, self.refresh_service_status)
 
 
 if __name__ == "__main__":
@@ -2570,16 +2383,13 @@ if __name__ == "__main__":
     if saved_lang:
         lang.set_language(saved_lang)
     else:
-        # 没有保存的语言设置，尝试检测系统语言
         try:
             sys_lang, _ = locale.getdefaultlocale()
             if sys_lang:
-                # 转换格式，如 zh_CN -> zh_CN, en_US -> en_US
                 if sys_lang in ["zh_CN", "zh_TW", "zh_HK"]:
                     lang.set_language("zh_CN")
                 elif sys_lang.startswith("en"):
                     lang.set_language("en_US")
-                # 其他语言可继续添加
         except Exception as e:
             log.warning(f"检测系统语言失败: {e}")
 
