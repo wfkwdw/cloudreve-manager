@@ -42,7 +42,7 @@
     "open_config_failed": "无法打开配置文件：{0}",
     "edit_config_opened": "📄 已打开配置文件：{0}",
     "about_title": "关于 Cloudreve 管理工具",
-    "about_text": "Cloudreve 网盘服务管理工具\n版本 2.0\n\n功能：\n- 安装/卸载 Cloudreve 服务\n- 自动/手动升级\n- 服务状态监控\n- 端口检测与配置\n- 离开模式管理\n- 配置备份与恢复（含 MySQL 数据导出）\n- 配置文件编辑\n- 一键配置 MySQL 数据库\n- 一键切换回默认 SQLite 数据库\n\n使用 ttkbootstrap 主题",
+    "about_text": "Cloudreve 网盘服务管理工具\n版本 3.2\n\n功能：\n- 安装/卸载 Cloudreve 服务\n- 自动/手动升级\n- 服务状态监控\n- 端口检测与配置\n- 离开模式管理\n- 配置备份与恢复（含 MySQL 数据导出）\n- 配置文件编辑\n- 一键配置 MySQL 数据库\n- 一键切换回默认 SQLite 数据库\n\n使用 ttkbootstrap 主题",
     "use_default_no_config": "❌ 未找到 Cloudreve 配置文件，无法切换。",
     "switch_db_confirm_title": "确认切换",
     "switch_db_confirm_msg": "切换回默认 SQLite 数据库将删除当前数据库配置（MySQL），并重启服务。\n是否继续？",

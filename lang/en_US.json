@@ -42,7 +42,7 @@
     "open_config_failed": "Failed to open config file: {0}",
     "edit_config_opened": "📄 Opened configuration file: {0}",
     "about_title": "About Cloudreve Manager",
-    "about_text": "Cloudreve WebDisk Manager\nVersion 2.0\n\nFeatures:\n- Install/Uninstall Cloudreve service\n- Auto/Manual upgrade\n- Service status monitoring\n- Port detection and configuration\n- Away mode management\n- Configuration backup/restore (with MySQL export)\n- Edit configuration file\n- One-click MySQL configuration\n- One-click switch back to default SQLite\n\nPowered by ttkbootstrap",
+    "about_text": "Cloudreve WebDisk Manager\nVersion 3.2\n\nFeatures:\n- Install/Uninstall Cloudreve service\n- Auto/Manual upgrade\n- Service status monitoring\n- Port detection and configuration\n- Away mode management\n- Configuration backup/restore (with MySQL export)\n- Edit configuration file\n- One-click MySQL configuration\n- One-click switch back to default SQLite\n\nPowered by ttkbootstrap",
     "use_default_no_config": "❌ Cloudreve config file not found, cannot switch.",
     "switch_db_confirm_title": "Confirm Switch",
     "switch_db_confirm_msg": "Switching back to default SQLite will remove current MySQL database configuration and restart the service.\nContinue?",
